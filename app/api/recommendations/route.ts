@@ -415,8 +415,9 @@ export async function GET(request: NextRequest) {
               return true;
             })
             .sort((a, b) => a.distanceKm - b.distanceKm)
-            .slice(0, 30);
+            .slice(0, 50); // Increased from 30 to 50 to check more places
           
+          console.log(`[EXTENDED SEARCH] Filtered ${extendedWithDistance.length} places to ${extendedFiltered.length} after name/distance filtering`);
           // Check weather for additional places
           console.log(`[EXTENDED SEARCH] Checking weather for ${extendedFiltered.length} additional places from 25-50km range`);
           for (const place of extendedFiltered) {
@@ -536,8 +537,9 @@ export async function GET(request: NextRequest) {
                 return true;
               })
               .sort((a, b) => a.distanceKm - b.distanceKm)
-              .slice(0, 30);
+              .slice(0, 50); // Increased from 30 to 50 to check more places
             
+            console.log(`[EXTENDED SEARCH] Filtered ${finalWithDistance.length} places to ${finalFiltered.length} after name/distance filtering (50-100km)`);
             console.log(`[EXTENDED SEARCH] Checking weather for ${finalFiltered.length} additional places from 50-100km range`);
             for (const place of finalFiltered) {
               try {

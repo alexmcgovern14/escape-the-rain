@@ -1192,6 +1192,8 @@ async function fetchPlacesFromGeoapify(
         ];
         
         // Exclude obvious administrative areas by name
+        // Note: We don't exclude specific district names as many share names with actual towns
+        // Instead, we rely on settlement properties (city, town, village, hamlet) to identify real settlements
         const isAdministrativeAreaByName = 
           nameLower.includes("county") ||
           nameLower.includes("district") ||
