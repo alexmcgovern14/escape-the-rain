@@ -19,7 +19,25 @@ import { checkWeatherAtLocation, checkWeatherBulk, isDryToday } from "@/lib/weat
 import { fetchNearbyPlacesWithSources, enrichPlaceWithPOIs } from "@/lib/places";
 import { haversineDistance } from "@/lib/geo";
 import { logSearchResult } from "@/lib/logging";
-import type { RecommendationResponse } from "@/lib/types";
+import type { RecommendationResponse, Place } from "@/lib/types";
+
+/**
+ * Check if a place is a duplicate of any existing places
+ * Checks by ID, name (case-insensitive), or close distance (< 5km)
+ */
+function isDuplicatePlace(place: Place, existingPlaces: Place[]): boolean {
+  return existingPlaces.some(existing => {
+    // Same ID
+    if (existing.id === place.id) return true;
+    // Same name (case-insensitive) and very close (< 5km apart) - likely the same place
+    const nameMatch = existing.name.toLowerCase().trim() === place.name.toLowerCase().trim();
+    if (nameMatch) {
+      const distanceBetween = haversineDistance(existing.lat, existing.lon, place.lat, place.lon);
+      if (distanceBetween < 5) return true; // Same place at slightly different coordinates
+    }
+    return false;
+  });
+}
 
 export async function GET(request: NextRequest) {
   // Log request start for debugging
@@ -435,7 +453,7 @@ export async function GET(request: NextRequest) {
               }
               
               // Don't duplicate existing candidates
-              if (allCandidates.some(c => c.id === place.id)) {
+              if (isDuplicatePlace(place, allCandidates)) {
                 return false;
               }
               
@@ -482,6 +500,10 @@ export async function GET(request: NextRequest) {
               } : null;
             })
             .filter((item): item is NonNullable<typeof item> => item !== null)
+            // Deduplicate by name and distance before sorting
+            .filter((item, index, array) => {
+              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place]));
+            })
             .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
             .slice(0, 5);
           console.log(`[EXTENDED SEARCH] Found ${allDryPlaces.length} total dry places after extended search`);
@@ -569,7 +591,7 @@ export async function GET(request: NextRequest) {
               }
               
               // Don't duplicate existing candidates
-              if (allCandidates.some(c => c.id === place.id)) {
+              if (isDuplicatePlace(place, allCandidates)) {
                 return false;
               }
               
@@ -616,6 +638,10 @@ export async function GET(request: NextRequest) {
               } : null;
             })
             .filter((item): item is NonNullable<typeof item> => item !== null)
+            // Deduplicate by name and distance before sorting
+            .filter((item, index, array) => {
+              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place]));
+            })
             .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
             .slice(0, 5);
           console.log(`[EXTENDED SEARCH] Found ${allDryPlaces.length} total dry places after extended search`);
@@ -693,7 +719,7 @@ export async function GET(request: NextRequest) {
                 
                 // Don't duplicate existing candidates
                 const allExistingPlaces = [...topCandidates, ...extendedFiltered];
-                if (allExistingPlaces.some(c => c.id === place.id)) return false;
+                if (isDuplicatePlace(place, allExistingPlaces)) return false;
                 
                 return true;
               })
@@ -821,7 +847,7 @@ export async function GET(request: NextRequest) {
               }
               
               // Don't duplicate existing candidates
-              if (allCandidates.some(c => c.id === place.id)) {
+              if (isDuplicatePlace(place, allCandidates)) {
                 return false;
               }
               
@@ -868,6 +894,10 @@ export async function GET(request: NextRequest) {
               } : null;
             })
             .filter((item): item is NonNullable<typeof item> => item !== null)
+            // Deduplicate by name and distance before sorting
+            .filter((item, index, array) => {
+              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place]));
+            })
             .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
             .slice(0, 5);
           console.log(`[EXTENDED SEARCH] Found ${allDryPlaces.length} total dry places after extended search`);
@@ -945,7 +975,7 @@ export async function GET(request: NextRequest) {
                 
                 // Don't duplicate existing candidates
                 const allExistingPlaces = [...topCandidates, ...extendedFiltered];
-                if (allExistingPlaces.some(c => c.id === place.id)) return false;
+                if (isDuplicatePlace(place, allExistingPlaces)) return false;
                 
                 return true;
               })

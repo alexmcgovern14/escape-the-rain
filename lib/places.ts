@@ -1191,9 +1191,63 @@ async function fetchPlacesFromGeoapify(
           "stirlingshire", "sutherland", "west lothian", "wigtownshire"
         ];
         
+        // Known UK administrative districts to exclude (these are local government districts, not settlements)
+        // These are district councils that often appear in Geoapify results
+        const ukAdministrativeDistricts = [
+          "gedling", "rushcliffe", "erewash", "broxtowe", "ashfield", "newark and sherwood",
+          "bassettlaw", "mansfield", "south derbyshire", "north west leicestershire",
+          "charnwood", "harborough", "oadby and wigston", "blaby", "hinckley and bosworth",
+          "north kesteven", "south kesteven", "boston", "east lindsey", "lincoln",
+          "west lindsey", "south holland", "south kesteven", "rutland", "melton",
+          "cast point", "rochford", "tendring", "colchester", "braintree", "maldon",
+          "chelmsford", "uttlesford", "epping forest", "harlow", "east hertfordshire",
+          "three rivers", "watford", "hertsmere", "welwyn hatfield", "broxbourne",
+          "east cambridgeshire", "south cambridgeshire", "huntingdonshire", "fenland",
+          "peterborough", "north norfolk", "south norfolk", "broadland", "great yarmouth",
+          "norwich", "breckland", "kings lynn and west norfolk", "north west norfolk",
+          "south west norfolk", "babergh", "mid suffolk", "east suffolk", "west suffolk",
+          "ipswich", "suffolk coastal", "waveney", "forest heath", "st edmundsbury",
+          "northampton", "south northamptonshire", "daventry", "wellingborough", "kettering",
+          "corby", "east northamptonshire", "wellingborough", "borough of wokingham",
+          "west berkshire", "reading", "slough", "windsor and maidenhead", "bracknell forest",
+          "south bucks", "aylesbury vale", "chiltern", "south bucks", "wycombe",
+          "milton keynes", "cherwell", "south oxfordshire", "vale of white horse",
+          "west oxfordshire", "oxford", "cotswold", "forest of dean", "tewkesbury",
+          "cheltenham", "gloucester", "stroud", "south gloucestershire", "bath and north east somerset",
+          "north somerset", "mendip", "sedgemoor", "taunton deane", "west somerset",
+          "south somerset", "east devon", "exeter", "mid devon", "north devon",
+          "south hams", "teignbridge", "torridge", "west devon", "plymouth", "torbay",
+          "east dorset", "north dorset", "purbeck", "west dorset", "weymouth and portland",
+          "christchurch", "bournemouth", "poole", "eastleigh", "fareham", "gosport",
+          "rushmoor", "havant", "winchester", "test valley", "east hampshire", "hart",
+          "basingstoke and deane", "rushmoor", "southampton", "portsmouth", "isle of wight",
+          "adur", "arun", "chichester", "crawley", "horsham", "mid sussex", "worthing",
+          "brighton and hove", "eastbourne", "hastings", "lewes", "rother", "wealden",
+          "canterbury", "dartford", "dover", "gravesham", "maidstone", "medway",
+          "sevenoaks", "shepway", "swale", "thanet", "tonbridge and malling", "tunbridge wells",
+          "elmbridge", "epsom and ewell", "guildford", "mole valley", "reigate and banstead",
+          "runnymede", "spelthorne", "surrey heath", "tandridge", "waverley", "woking",
+          "bracknell forest", "slough", "windsor and maidenhead", "wokingham", "west berkshire",
+          "reading", "basingstoke and deane", "east hampshire", "hart", "rushmoor",
+          "test valley", "winchester", "havant", "gosport", "fareham", "eastleigh",
+          "new forest", "southampton", "portsmouth", "isle of wight", "adur", "arun",
+          "chichester", "crawley", "horsham", "mid sussex", "worthing", "brighton and hove",
+          "eastbourne", "hastings", "lewes", "rother", "wealden", "canterbury", "dartford",
+          "dover", "gravesham", "maidstone", "medway", "sevenoaks", "shepway", "swale",
+          "thanet", "tonbridge and malling", "tunbridge wells", "elmbridge", "epsom and ewell",
+          "guildford", "mole valley", "reigate and banstead", "runnymede", "spelthorne",
+          "surrey heath", "tandridge", "waverley", "woking", "bracknell forest", "slough",
+          "windsor and maidenhead", "wokingham", "west berkshire", "reading", "basingstoke and deane",
+          "east hampshire", "hart", "rushmoor", "test valley", "winchester", "havant",
+          "gosport", "fareham", "eastleigh", "new forest", "southampton", "portsmouth",
+          "isle of wight", "adur", "arun", "chichester", "crawley", "horsham", "mid sussex",
+          "worthing", "brighton and hove", "eastbourne", "hastings", "lewes", "rother", "wealden"
+        ];
+        
         // Exclude obvious administrative areas by name
         // Note: Administrative districts often have settlement properties but aren't actual settlements
         const isKnownCounty = ukCounties.includes(nameLower);
+        const isKnownAdministrativeDistrict = ukAdministrativeDistricts.includes(nameLower);
         
         // Filter out administrative districts and boroughs (even if they have settlement properties)
         // These are administrative areas, not actual towns/villages
@@ -1221,16 +1275,16 @@ async function fetchPlacesFromGeoapify(
         // Administrative districts often have "city" or "town" properties but aren't actual settlements
         if (hasSettlementProperty) {
           // Has settlement property - but still filter administrative districts
-          if (isKnownCounty || isAdministrativeDistrict || isHighLevelAdministrative) {
+          if (isKnownCounty || isKnownAdministrativeDistrict || isAdministrativeDistrict || isHighLevelAdministrative) {
             nameFiltered++;
             continue;
           }
           // Allow it through - it has settlement properties and isn't administrative
         } else {
           // No settlement property - need to be more careful
-          // Exclude if it's clearly an administrative area or known county
-          if (isKnownCounty || isAdministrativeDistrict || isHighLevelAdministrative) {
-            if (isKnownCounty || isAdministrativeDistrict) {
+          // Exclude if it's clearly an administrative area or known county/district
+          if (isKnownCounty || isKnownAdministrativeDistrict || isAdministrativeDistrict || isHighLevelAdministrative) {
+            if (isKnownCounty || isKnownAdministrativeDistrict || isAdministrativeDistrict) {
               nameFiltered++;
             } else {
               administrativeFiltered++;
