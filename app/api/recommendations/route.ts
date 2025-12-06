@@ -22,6 +22,9 @@ import { logSearchResult } from "@/lib/logging";
 import type { RecommendationResponse } from "@/lib/types";
 
 export async function GET(request: NextRequest) {
+  // Log request start for debugging
+  console.log(`[REQUEST START] ${new Date().toISOString()} - Recommendations API called`);
+  
   const searchParams = request.nextUrl.searchParams;
   const lat = searchParams.get("lat");
   const lon = searchParams.get("lon");
@@ -34,6 +37,8 @@ export async function GET(request: NextRequest) {
   // Otherwise use the specified distance
   const useAutoSearch = !searchDistanceParam || searchDistanceParam === "auto";
   const searchDistance = useAutoSearch ? null : parseInt(searchDistanceParam, 10);
+  
+  console.log(`[REQUEST PARAMS] lat=${lat}, lon=${lon}, source=${source}, strictHours=${strictHours}, searchDistance=${searchDistanceParam || "auto"}`);
 
   if (!lat || !lon) {
     return NextResponse.json(
