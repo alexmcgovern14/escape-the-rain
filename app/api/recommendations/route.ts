@@ -375,6 +375,9 @@ export async function GET(request: NextRequest) {
           return distance > 25 && distance <= 50;
         });
         
+        let extendedFiltered: typeof topCandidates = [];
+        let enrichedExtendedPlaces = enrichedPlaces;
+        
         if (extendedPlaces.length > 0) {
           // Merge with existing candidates
           const allCandidates = [...topCandidates];
@@ -383,7 +386,7 @@ export async function GET(request: NextRequest) {
             return { ...place, distanceKm: distance };
           });
           
-          const extendedFiltered = extendedWithDistance
+          extendedFiltered = extendedWithDistance
             .filter((place) => {
               // Distance filter
               if (place.distanceKm <= 1) return false;
@@ -430,8 +433,8 @@ export async function GET(request: NextRequest) {
           console.log(`[EXTENDED SEARCH] Weather check complete. Total weather results: ${weatherResults.size}`);
           
           // Re-filter with all places
-          const allPlaces = [...allCandidates, ...extendedFiltered];
-          console.log(`[EXTENDED SEARCH] Re-filtering ${allPlaces.length} total places (${allCandidates.length} original + ${extendedFiltered.length} extended)`);
+          const allPlaces = [...topCandidates, ...extendedFiltered];
+          console.log(`[EXTENDED SEARCH] Re-filtering ${allPlaces.length} total places (${topCandidates.length} original + ${extendedFiltered.length} extended)`);
           const allDryPlaces = allPlaces
             .map((place) => {
               const weatherKey = `${place.lat},${place.lon}`;
@@ -456,7 +459,7 @@ export async function GET(request: NextRequest) {
           console.log(`[EXTENDED SEARCH] Found ${allDryPlaces.length} total dry places after extended search`);
           
           // Enrich extended places with POI data
-          const enrichedExtendedPlaces = await Promise.all(
+          enrichedExtendedPlaces = await Promise.all(
             allDryPlaces.map(async (item) => {
               const poiData = await enrichPlaceWithPOIs(
                 item.place.lat,
@@ -477,9 +480,129 @@ export async function GET(request: NextRequest) {
             })
           );
           
-          if (enrichedExtendedPlaces.length > enrichedPlaces.length) {
-            response.recommendations = enrichedExtendedPlaces;
+          // Always update recommendations with the latest results
+          response.recommendations = enrichedExtendedPlaces;
+          console.log(`[EXTENDED SEARCH] Updated recommendations: ${enrichedExtendedPlaces.length} places`);
+          
+          // If we have 5 places, return early
+          if (enrichedExtendedPlaces.length >= 5) {
             return NextResponse.json(response);
+          }
+        }
+        
+        // If we still don't have 5 places after 25-50km search, extend to 50-100km
+        console.log(`[EXTENDED SEARCH] After 25-50km search, have ${enrichedExtendedPlaces.length} places. Extending to 50-100km...`);
+        if (enrichedExtendedPlaces.length < 5) {
+          const finalRadius = 100;
+          console.log(`[EXTENDED SEARCH] Extending search to 50-${finalRadius}km for more options`);
+          const finalExtendedResult = await fetchNearbyPlacesWithSources(
+            latitude,
+            longitude,
+            finalRadius,
+            apiKey
+          );
+          
+          // Filter to only places between 50-100km
+          const finalExtendedPlaces = finalExtendedResult.places.filter(place => {
+            const distance = haversineDistance(latitude, longitude, place.lat, place.lon);
+            return distance > 50 && distance <= 100;
+          });
+          
+          if (finalExtendedPlaces.length > 0) {
+            const finalWithDistance = finalExtendedPlaces.map((place) => {
+              const distance = haversineDistance(latitude, longitude, place.lat, place.lon);
+              return { ...place, distanceKm: distance };
+            });
+            
+            const finalFiltered = finalWithDistance
+              .filter((place) => {
+                if (place.distanceKm <= 1) return false;
+                
+                if (userLocationName) {
+                  const placeNameLower = place.name.toLowerCase().trim();
+                  const userLocationNameLower = userLocationName.toLowerCase().trim();
+                  
+                  if (placeNameLower === userLocationNameLower) return false;
+                  
+                  if (placeNameLower.includes(userLocationNameLower) || userLocationNameLower.includes(placeNameLower)) {
+                    if (place.distanceKm < 5) return false;
+                  }
+                }
+                
+                // Don't duplicate existing candidates
+                const allExistingPlaces = [...topCandidates, ...extendedFiltered];
+                if (allExistingPlaces.some(c => c.id === place.id)) return false;
+                
+                return true;
+              })
+              .sort((a, b) => a.distanceKm - b.distanceKm)
+              .slice(0, 30);
+            
+            console.log(`[EXTENDED SEARCH] Checking weather for ${finalFiltered.length} additional places from 50-100km range`);
+            for (const place of finalFiltered) {
+              try {
+                const result = await checkWeatherAtLocation(place.lat, place.lon, strictHours);
+                weatherResults.set(`${place.lat},${place.lon}`, result);
+                console.log(`[EXTENDED SEARCH] ${place.name}: ${result.summary} (dry: ${isDryToday(result, true)})`);
+                await new Promise(resolve => setTimeout(resolve, 100));
+              } catch (error) {
+                console.error(`[EXTENDED SEARCH] Failed to check weather for ${place.name}:`, error);
+              }
+            }
+            
+            // Re-filter with all places including final extended
+            const allFinalPlaces = [...topCandidates, ...(extendedFiltered || []), ...finalFiltered];
+            const allFinalDryPlaces = allFinalPlaces
+              .map((place) => {
+                const weatherKey = `${place.lat},${place.lon}`;
+                const weather = weatherResults.get(weatherKey);
+                if (!weather) return null;
+                const dry = isDryToday(weather, true);
+                return dry ? {
+                  place,
+                  isDryToday: dry,
+                  rainSummary: weather.summary || "Unknown",
+                } : null;
+              })
+              .filter((item): item is NonNullable<typeof item> => item !== null)
+              .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
+              .slice(0, 5);
+            
+            console.log(`[EXTENDED SEARCH] Found ${allFinalDryPlaces.length} total dry places after 50-100km search`);
+            
+            // Enrich final places with POI data
+            const enrichedFinalPlaces = await Promise.all(
+              allFinalDryPlaces.map(async (item) => {
+                const poiData = await enrichPlaceWithPOIs(
+                  item.place.lat,
+                  item.place.lon,
+                  item.place.name,
+                  geoapifyApiKey
+                );
+                await new Promise(resolve => setTimeout(resolve, 200));
+                return {
+                  place: {
+                    ...item.place,
+                    nearbyPOIs: poiData.nearbyPOIs,
+                    poiSummary: poiData.poiSummary,
+                  },
+                  isDryToday: item.isDryToday,
+                  rainSummary: item.rainSummary,
+                };
+              })
+            );
+            
+            // Always update recommendations with the latest results (even if same count, they might be different places)
+            if (enrichedFinalPlaces.length >= enrichedExtendedPlaces.length) {
+              response.recommendations = enrichedFinalPlaces;
+              console.log(`[EXTENDED SEARCH] Updated recommendations with 50-100km results: ${enrichedFinalPlaces.length} places`);
+              return NextResponse.json(response);
+            } else {
+              // Keep the 25-50km results if they're better
+              response.recommendations = enrichedExtendedPlaces;
+              console.log(`[EXTENDED SEARCH] Keeping 25-50km results (${enrichedExtendedPlaces.length} places) as they're better than 50-100km results`);
+              return NextResponse.json(response);
+            }
           }
         }
       }
