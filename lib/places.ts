@@ -1192,18 +1192,20 @@ async function fetchPlacesFromGeoapify(
         ];
         
         // Exclude obvious administrative areas by name
-        // Note: If a place has settlement properties (city, town, village, hamlet), we trust Geoapify
-        // and only filter out known counties or clearly administrative names
+        // Note: Administrative districts often have settlement properties but aren't actual settlements
         const isKnownCounty = ukCounties.includes(nameLower);
-        const isClearlyAdministrative = 
-          nameLower.includes("county") ||
-          nameLower.includes("district") ||
-          nameLower.includes("council") ||
-          nameLower.includes("region") ||
-          nameLower.includes("administrative") ||
-          nameLower.includes("local authority") ||
-          nameLower.includes("authority") ||
-          (nameLower.includes("borough") && !nameLower.match(/\b(town|city|village|hamlet)\b/i));
+        
+        // Filter out administrative districts and boroughs (even if they have settlement properties)
+        // These are administrative areas, not actual towns/villages
+        const isAdministrativeDistrict = 
+          nameLower.includes("london borough of") ||
+          nameLower.includes("borough of") ||
+          nameLower.match(/\b(district|county|council|region|authority|administrative)\b/i) ||
+          // Filter "South/North/East/West X" patterns that are districts (like "South Cambridgeshire")
+          (/^(south|north|east|west|mid)\s+[a-z]+\s*(district|county|council|borough)$/i.test(name)) ||
+          // Filter boroughs unless it's a known town name
+          (nameLower.includes("borough") && !nameLower.match(/\b(town|city|village|hamlet)\b/i) && 
+           !["knaresborough", "attleborough", "princes risborough", "scarborough", "marlborough", "boroughbridge"].some(town => nameLower.includes(town)));
         
         // Check categories - exclude high-level administrative categories
         const isHighLevelAdministrative = kinds.some((k: string) => 
@@ -1211,23 +1213,24 @@ async function fetchPlacesFromGeoapify(
           k.includes("administrative.country_part") ||
           k.includes("administrative.state") ||
           k.includes("administrative.province") ||
-          k.includes("administrative.region")
+          k.includes("administrative.region") ||
+          k.includes("administrative.district_level")
         );
         
-        // If it has settlement properties (city, town, village, hamlet), trust Geoapify
-        // Only filter out known counties or clearly administrative areas
+        // Even if it has settlement properties, filter out administrative districts
+        // Administrative districts often have "city" or "town" properties but aren't actual settlements
         if (hasSettlementProperty) {
-          // Has settlement property - trust Geoapify, only filter known counties
-          if (isKnownCounty || (isClearlyAdministrative && !properties.city && !properties.town && !properties.village && !properties.hamlet)) {
+          // Has settlement property - but still filter administrative districts
+          if (isKnownCounty || isAdministrativeDistrict || isHighLevelAdministrative) {
             nameFiltered++;
             continue;
           }
-          // Allow it through - it has settlement properties
+          // Allow it through - it has settlement properties and isn't administrative
         } else {
           // No settlement property - need to be more careful
           // Exclude if it's clearly an administrative area or known county
-          if (isKnownCounty || isClearlyAdministrative || isHighLevelAdministrative) {
-            if (isKnownCounty || isClearlyAdministrative) {
+          if (isKnownCounty || isAdministrativeDistrict || isHighLevelAdministrative) {
+            if (isKnownCounty || isAdministrativeDistrict) {
               nameFiltered++;
             } else {
               administrativeFiltered++;
@@ -1243,7 +1246,8 @@ async function fetchPlacesFromGeoapify(
             nameLower.includes("council") ||
             nameLower.includes("region") ||
             nameLower.includes("authority") ||
-            nameLower.includes("administrative");
+            nameLower.includes("administrative") ||
+            nameLower.includes("borough");
           
           // Allow if it doesn't look administrative and has a reasonable name
           if (looksLikeAdministrative || name.length <= 2) {
