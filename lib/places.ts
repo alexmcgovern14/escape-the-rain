@@ -197,7 +197,7 @@ export async function enrichPlaceWithPOIs(
           categories = properties.categories;
         } else if (typeof properties.categories === 'string') {
           // Handle comma-separated string
-          categories = properties.categories.split(',').map(c => c.trim());
+          categories = properties.categories.split(',').map((c: string) => c.trim());
         }
       }
       
@@ -206,7 +206,7 @@ export async function enrichPlaceWithPOIs(
         if (Array.isArray(properties.category)) {
           categories = properties.category;
         } else if (typeof properties.category === 'string') {
-          categories = properties.category.split(',').map(c => c.trim());
+          categories = properties.category.split(',').map((c: string) => c.trim());
         }
       }
       
