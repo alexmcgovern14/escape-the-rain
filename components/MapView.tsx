@@ -35,22 +35,54 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
     zoom: 5.5,
   };
 
+  // Track if map has loaded
+  const [mapLoaded, setMapLoaded] = useState(false);
+
   // Calculate bounds and zoom to fit all locations
   useEffect(() => {
-    if (mapRef.current && allLocations.length > 0) {
-      const lats = allLocations.map((loc) => loc.lat);
-      const lons = allLocations.map((loc) => loc.lon);
+    if (!mapRef.current || !mapLoaded) return;
+
+    const map = mapRef.current.getMap();
+    if (!map) return;
+
+    // If no locations, reset to default UK view
+    if (allLocations.length === 0) {
+      map.flyTo({
+        center: [defaultUKView.longitude, defaultUKView.latitude],
+        zoom: defaultUKView.zoom,
+        duration: 1000,
+      });
+      return;
+    }
+
+    const lats = allLocations.map((loc) => loc.lat);
+    const lons = allLocations.map((loc) => loc.lon);
+    
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    
+    // If all locations are very close together (within ~1km), use a fixed zoom level
+    const latRange = maxLat - minLat;
+    const lonRange = maxLon - minLon;
+    const isVeryClose = latRange < 0.01 && lonRange < 0.01; // ~1km
+    
+    if (isVeryClose && allLocations.length > 0) {
+      // Use the first location as center and set a reasonable zoom
+      const center = allLocations[0];
+      map.flyTo({
+        center: [center.lon, center.lat],
+        zoom: 12,
+        duration: 1000,
+      });
+    } else {
+      // Calculate bounds with padding
+      // Add padding to bounds (10% on each side, minimum 0.01 degrees)
+      const latPadding = Math.max((maxLat - minLat) * 0.1, 0.01);
+      const lonPadding = Math.max((maxLon - minLon) * 0.1, 0.01);
       
-      const minLat = Math.min(...lats);
-      const maxLat = Math.max(...lats);
-      const minLon = Math.min(...lons);
-      const maxLon = Math.max(...lons);
-      
-      // Add padding to bounds (10% on each side)
-      const latPadding = (maxLat - minLat) * 0.1;
-      const lonPadding = (maxLon - minLon) * 0.1;
-      
-      mapRef.current.fitBounds(
+      map.fitBounds(
         [
           [minLon - lonPadding, minLat - latPadding],
           [maxLon + lonPadding, maxLat + latPadding],
@@ -58,10 +90,11 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
         {
           padding: { top: 50, bottom: 50, left: 50, right: 50 },
           duration: 1000, // Smooth animation
+          maxZoom: 15, // Don't zoom in too much
         }
       );
     }
-  }, [allLocations]);
+  }, [allLocations, mapLoaded]);
 
   if (!apiKey) {
     return (
@@ -80,6 +113,7 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
         initialViewState={defaultUKView}
         style={{ width: "100%", height: "100%" }}
         mapStyle="mapbox://styles/mapbox/streets-v12"
+        onLoad={() => setMapLoaded(true)}
       >
         {userLocation && (
           <Marker
