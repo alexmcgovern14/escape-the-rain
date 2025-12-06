@@ -1192,9 +1192,10 @@ async function fetchPlacesFromGeoapify(
         ];
         
         // Exclude obvious administrative areas by name
-        // Note: We don't exclude specific district names as many share names with actual towns
-        // Instead, we rely on settlement properties (city, town, village, hamlet) to identify real settlements
-        const isAdministrativeAreaByName = 
+        // Note: If a place has settlement properties (city, town, village, hamlet), we trust Geoapify
+        // and only filter out known counties or clearly administrative names
+        const isKnownCounty = ukCounties.includes(nameLower);
+        const isClearlyAdministrative = 
           nameLower.includes("county") ||
           nameLower.includes("district") ||
           nameLower.includes("council") ||
@@ -1202,12 +1203,7 @@ async function fetchPlacesFromGeoapify(
           nameLower.includes("administrative") ||
           nameLower.includes("local authority") ||
           nameLower.includes("authority") ||
-          // Exclude known UK county names
-          ukCounties.includes(nameLower) ||
-          // Exclude if it's just a district name without being a known town
-          (nameLower.includes("borough") && !nameLower.match(/\b(town|city|village|hamlet)\b/i)) ||
-          // Exclude if name matches common administrative patterns
-          (/^(east|west|north|south|greater)\s+(.*)$/i.test(name) && !nameLower.match(/\b(town|city|village|hamlet)\b/i));
+          (nameLower.includes("borough") && !nameLower.match(/\b(town|city|village|hamlet)\b/i));
         
         // Check categories - exclude high-level administrative categories
         const isHighLevelAdministrative = kinds.some((k: string) => 
@@ -1218,20 +1214,20 @@ async function fetchPlacesFromGeoapify(
           k.includes("administrative.region")
         );
         
-        // If it has settlement properties (city, town, village, hamlet), it's likely a settlement
-        // OR if it doesn't look like an administrative area
+        // If it has settlement properties (city, town, village, hamlet), trust Geoapify
+        // Only filter out known counties or clearly administrative areas
         if (hasSettlementProperty) {
-          // Has settlement property - likely a real settlement, but still filter out obvious admin areas
-          if (isAdministrativeAreaByName && !nameLower.match(/\b(town|city|village|hamlet)\b/i)) {
+          // Has settlement property - trust Geoapify, only filter known counties
+          if (isKnownCounty || (isClearlyAdministrative && !properties.city && !properties.town && !properties.village && !properties.hamlet)) {
             nameFiltered++;
             continue;
           }
           // Allow it through - it has settlement properties
         } else {
           // No settlement property - need to be more careful
-          // Exclude if it's clearly an administrative area
-          if (isAdministrativeAreaByName || isHighLevelAdministrative) {
-            if (isAdministrativeAreaByName) {
+          // Exclude if it's clearly an administrative area or known county
+          if (isKnownCounty || isClearlyAdministrative || isHighLevelAdministrative) {
+            if (isKnownCounty || isClearlyAdministrative) {
               nameFiltered++;
             } else {
               administrativeFiltered++;
@@ -1239,18 +1235,18 @@ async function fetchPlacesFromGeoapify(
             continue;
           }
           
-          // If no settlement property but also not clearly administrative, check if name suggests settlement
-          const nameSuggestsSettlement = nameLower.match(/\b(town|city|village|hamlet|borough|suburb)\b/i) ||
-            // Allow if it doesn't look like an administrative area and has a reasonable name
-            (!nameLower.includes("county") &&
-             !nameLower.includes("district") &&
-             !nameLower.includes("council") &&
-             !nameLower.includes("region") &&
-             !nameLower.includes("authority") &&
-             !nameLower.includes("administrative") &&
-             name.length > 2); // Basic sanity check - real place names are usually > 2 chars
+          // If no settlement property but also not clearly administrative, be more lenient
+          // Allow places that don't look like administrative areas
+          const looksLikeAdministrative = 
+            nameLower.includes("county") ||
+            nameLower.includes("district") ||
+            nameLower.includes("council") ||
+            nameLower.includes("region") ||
+            nameLower.includes("authority") ||
+            nameLower.includes("administrative");
           
-          if (!nameSuggestsSettlement) {
+          // Allow if it doesn't look administrative and has a reasonable name
+          if (looksLikeAdministrative || name.length <= 2) {
             settlementFiltered++;
             continue;
           }
