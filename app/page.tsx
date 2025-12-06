@@ -65,9 +65,12 @@ export default function Home() {
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Rain Escape</h1>
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <span className="text-5xl">☀️</span>
+            <h1 className="text-4xl font-bold text-gray-900">Rain Escape</h1>
+          </div>
           <p className="text-gray-600">
-            Find the closest dry destinations when it&apos;s raining at your location
+            Can&apos;t go outside? Find the nearest places where it&apos;s not raining
           </p>
         </div>
 
@@ -127,7 +130,7 @@ export default function Home() {
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
                   {searchDistance === "auto" 
-                    ? "Searches 25km first, then 50km, then 100km if needed"
+                    ? "Searches 10km first, then 25km, then 50km, then 100km if needed"
                     : `Maximum distance to search for dry places: ${searchDistance}km`}
                 </p>
               </div>

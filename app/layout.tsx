@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Rain Escape - Find Dry Places Nearby",
-  description: "Discover the closest dry destinations when it's raining at your location",
+  title: "Escape the rain",
+  description: "Can't go outside? Find the nearest places where it's not raining",
 };
 
 export default function RootLayout({
