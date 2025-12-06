@@ -21,18 +21,20 @@ export default function DestinationsList({ recommendations }: DestinationsListPr
   return (
     <div className="space-y-3">
       <h2 className="text-xl font-semibold mb-4">Dry destinations nearby</h2>
-      {recommendations.map((rec, index) => (
-        <div
-          key={rec.place.id}
-          className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
-        >
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-lg font-semibold text-gray-900">
-                  {index + 1}. {rec.place.name}
-                </span>
-              </div>
+      {recommendations.map((rec, index) => {
+        const letter = String.fromCharCode(65 + index); // A, B, C, D, E
+        return (
+          <div
+            key={rec.place.id}
+            className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg font-semibold text-gray-900">
+                    {letter}. {rec.place.name}
+                  </span>
+                </div>
               <div className="text-sm text-gray-600 space-y-1">
                 <div>📍 {formatDistance(rec.place.distanceKm)} away</div>
                 <div>🌤️ {rec.rainSummary}</div>
@@ -58,7 +60,8 @@ export default function DestinationsList({ recommendations }: DestinationsListPr
             </a>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

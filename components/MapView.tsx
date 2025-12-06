@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import Map, { Marker, Popup } from "react-map-gl/mapbox";
+import type { MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { Recommendation } from "@/lib/types";
 
@@ -13,6 +14,7 @@ type MapViewProps = {
 export default function MapView({ userLocation, recommendations }: MapViewProps) {
   const apiKey = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
   const [selectedPlace, setSelectedPlace] = useState<string | null>(null);
+  const mapRef = useRef<MapRef>(null);
 
   // Calculate center and bounds
   const allLocations = useMemo(() => {
@@ -26,25 +28,40 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
     return locations;
   }, [userLocation, recommendations]);
 
-  const center = useMemo(() => {
-    if (allLocations.length === 0) {
-      return { lat: 51.5074, lng: -0.1278 }; // Default to London
-    }
-    const lats = allLocations.map((loc) => loc.lat);
-    const lons = allLocations.map((loc) => loc.lon);
-    return {
-      lat: (Math.min(...lats) + Math.max(...lats)) / 2,
-      lng: (Math.min(...lons) + Math.max(...lons)) / 2,
-    };
-  }, [allLocations]);
+  // Default UK view (centered on UK, zoomed out to show whole country)
+  const defaultUKView = {
+    longitude: -2.0,
+    latitude: 54.0,
+    zoom: 5.5,
+  };
 
-  if (allLocations.length === 0) {
-    return (
-      <div className="w-full h-96 bg-gray-100 rounded-lg flex items-center justify-center">
-        <p className="text-gray-500">No locations to display</p>
-      </div>
-    );
-  }
+  // Calculate bounds and zoom to fit all locations
+  useEffect(() => {
+    if (mapRef.current && allLocations.length > 0) {
+      const lats = allLocations.map((loc) => loc.lat);
+      const lons = allLocations.map((loc) => loc.lon);
+      
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const minLon = Math.min(...lons);
+      const maxLon = Math.max(...lons);
+      
+      // Add padding to bounds (10% on each side)
+      const latPadding = (maxLat - minLat) * 0.1;
+      const lonPadding = (maxLon - minLon) * 0.1;
+      
+      mapRef.current.fitBounds(
+        [
+          [minLon - lonPadding, minLat - latPadding],
+          [maxLon + lonPadding, maxLat + latPadding],
+        ],
+        {
+          padding: { top: 50, bottom: 50, left: 50, right: 50 },
+          duration: 1000, // Smooth animation
+        }
+      );
+    }
+  }, [allLocations]);
 
   if (!apiKey) {
     return (
@@ -58,12 +75,9 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
   return (
     <div className="w-full h-96 rounded-lg overflow-hidden border border-gray-200">
       <Map
+        ref={mapRef}
         mapboxAccessToken={apiKey}
-        initialViewState={{
-          longitude: center.lng,
-          latitude: center.lat,
-          zoom: userLocation ? 10 : 8,
-        }}
+        initialViewState={defaultUKView}
         style={{ width: "100%", height: "100%" }}
         mapStyle="mapbox://styles/mapbox/streets-v12"
       >
@@ -81,21 +95,24 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
             </div>
           </Marker>
         )}
-        {recommendations.map((rec) => (
-          <Marker
-            key={rec.place.id}
-            longitude={rec.place.lon}
-            latitude={rec.place.lat}
-            anchor="bottom"
-            onClick={() => setSelectedPlace(rec.place.id)}
-          >
-            <div className="cursor-pointer">
-              <div className="w-8 h-8 bg-red-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
-                <span className="text-white text-xs font-bold">📍</span>
+        {recommendations.map((rec, index) => {
+          const letter = String.fromCharCode(65 + index); // A, B, C, D, E
+          return (
+            <Marker
+              key={rec.place.id}
+              longitude={rec.place.lon}
+              latitude={rec.place.lat}
+              anchor="center"
+              onClick={() => setSelectedPlace(rec.place.id)}
+            >
+              <div className="cursor-pointer">
+                <div className="w-8 h-8 bg-red-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
+                  <span className="text-white text-sm font-bold">{letter}</span>
+                </div>
               </div>
-            </div>
-          </Marker>
-        ))}
+            </Marker>
+          );
+        })}
         {selectedPlace === "user" && userLocation && (
           <Popup
             longitude={userLocation.lon}

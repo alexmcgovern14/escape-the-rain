@@ -67,7 +67,7 @@ export default function Home() {
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-2">
             <span className="text-5xl">☀️</span>
-            <h1 className="text-4xl font-bold text-gray-900">Rain Escape</h1>
+            <h1 className="text-4xl font-bold text-gray-900">Escape the Rain</h1>
           </div>
           <p className="text-gray-600">
             Can&apos;t go outside? Find the nearest places where it&apos;s not raining
