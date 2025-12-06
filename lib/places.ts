@@ -273,23 +273,6 @@ export async function enrichPlaceWithPOIs(
 export async function fetchNearbyPlaces(
   lat: number,
   lon: number,
-  radiusKm: number,
-  apiKey: string
-): Promise<Place[]>;
-
-/**
- * Fetch interesting places within a radius of a location (with API source info)
- */
-export async function fetchNearbyPlacesWithSources(
-  lat: number,
-  lon: number,
-  radiusKm: number,
-  apiKey: string
-): Promise<PlacesResult>;
-
-export async function fetchNearbyPlaces(
-  lat: number,
-  lon: number,
   radiusKm: number = 50,
   apiKey: string
 ): Promise<Place[]> {
