@@ -1166,6 +1166,31 @@ async function fetchPlacesFromGeoapify(
         // Filter out administrative areas that aren't actual settlements
         const nameLower = name.toLowerCase();
         
+        // Known UK county names to exclude (these are administrative areas, not settlements)
+        const ukCounties = [
+          "essex", "kent", "suffolk", "norfolk", "lincolnshire", "yorkshire",
+          "lancashire", "cheshire", "derbyshire", "nottinghamshire", "leicestershire",
+          "warwickshire", "worcestershire", "gloucestershire", "oxfordshire",
+          "buckinghamshire", "berkshire", "hampshire", "wiltshire", "dorset",
+          "somerset", "devon", "cornwall", "cumbria", "northumberland", "durham",
+          "north yorkshire", "south yorkshire", "west yorkshire", "east yorkshire",
+          "east sussex", "west sussex", "surrey", "hertfordshire", "bedfordshire",
+          "cambridgeshire", "northamptonshire", "rutland", "staffordshire",
+          "shropshire", "herefordshire", "gwynedd", "powys", "carmarthenshire",
+          "pembrokeshire", "ceredigion", "anglesey", "conwy", "denbighshire",
+          "flintshire", "wrexham", "monmouthshire", "caerphilly", "blaenau gwent",
+          "torfaen", "newport", "cardiff", "vale of glamorgan", "rhondda cynon taf",
+          "merthyr tydfil", "bridgend", "neath port talbot", "swansea", "carmarthenshire",
+          "ceredigion", "pembrokeshire", "anglesey", "gwynedd", "conwy", "denbighshire",
+          "flintshire", "wrexham", "aberdeenshire", "angus", "argyll and bute",
+          "ayrshire", "banffshire", "berwickshire", "bute", "caithness", "clackmannanshire",
+          "dumfriesshire", "dunbartonshire", "east lothian", "fife", "inverness-shire",
+          "kincardineshire", "kinross-shire", "kirkcudbrightshire", "lanarkshire",
+          "midlothian", "moray", "nairnshire", "orkney", "peeblesshire", "perthshire",
+          "renfrewshire", "ross-shire", "roxburghshire", "selkirkshire", "shetland",
+          "stirlingshire", "sutherland", "west lothian", "wigtownshire"
+        ];
+        
         // Exclude obvious administrative areas by name
         const isAdministrativeAreaByName = 
           nameLower.includes("county") ||
@@ -1175,6 +1200,8 @@ async function fetchPlacesFromGeoapify(
           nameLower.includes("administrative") ||
           nameLower.includes("local authority") ||
           nameLower.includes("authority") ||
+          // Exclude known UK county names
+          ukCounties.includes(nameLower) ||
           // Exclude if it's just a district name without being a known town
           (nameLower.includes("borough") && !nameLower.match(/\b(town|city|village|hamlet)\b/i)) ||
           // Exclude if name matches common administrative patterns

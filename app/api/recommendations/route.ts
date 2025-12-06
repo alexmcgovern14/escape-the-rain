@@ -415,24 +415,35 @@ export async function GET(request: NextRequest) {
             .slice(0, 30);
           
           // Check weather for additional places
+          console.log(`[EXTENDED SEARCH] Checking weather for ${extendedFiltered.length} additional places from 25-50km range`);
           for (const place of extendedFiltered) {
             try {
+              console.log(`[EXTENDED SEARCH] Checking weather for ${place.name} at ${place.lat},${place.lon}`);
               const result = await checkWeatherAtLocation(place.lat, place.lon, strictHours);
               weatherResults.set(`${place.lat},${place.lon}`, result);
+              console.log(`[EXTENDED SEARCH] ${place.name}: ${result.summary} (dry: ${isDryToday(result, true)})`);
               await new Promise(resolve => setTimeout(resolve, 100));
             } catch (error) {
-              console.error(`Failed to check weather for ${place.lat},${place.lon}:`, error);
+              console.error(`[EXTENDED SEARCH] Failed to check weather for ${place.name} (${place.lat},${place.lon}):`, error);
             }
           }
+          console.log(`[EXTENDED SEARCH] Weather check complete. Total weather results: ${weatherResults.size}`);
           
           // Re-filter with all places
           const allPlaces = [...allCandidates, ...extendedFiltered];
+          console.log(`[EXTENDED SEARCH] Re-filtering ${allPlaces.length} total places (${allCandidates.length} original + ${extendedFiltered.length} extended)`);
           const allDryPlaces = allPlaces
             .map((place) => {
               const weatherKey = `${place.lat},${place.lon}`;
               const weather = weatherResults.get(weatherKey);
-              if (!weather) return null;
+              if (!weather) {
+                console.log(`[EXTENDED SEARCH] No weather data for ${place.name} (${weatherKey})`);
+                return null;
+              }
               const dry = isDryToday(weather, true);
+              if (dry) {
+                console.log(`[EXTENDED SEARCH] ${place.name}: DRY - ${weather.summary}`);
+              }
               return dry ? {
                 place,
                 isDryToday: dry,
@@ -442,6 +453,7 @@ export async function GET(request: NextRequest) {
             .filter((item): item is NonNullable<typeof item> => item !== null)
             .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
             .slice(0, 5);
+          console.log(`[EXTENDED SEARCH] Found ${allDryPlaces.length} total dry places after extended search`);
           
           // Enrich extended places with POI data
           const enrichedExtendedPlaces = await Promise.all(
