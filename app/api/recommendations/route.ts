@@ -59,15 +59,16 @@ export async function GET(request: NextRequest) {
     );
   }
 
-    const apiKey = process.env.OPENTRIPMAP_API_KEY;
-    if (!apiKey) {
+    const apiKey = process.env.OPENTRIPMAP_API_KEY || "";
+    const geoapifyApiKey = process.env.GEOAPIFY_API_KEY || "";
+    
+    // At least one API key should be configured
+    if (!geoapifyApiKey && !apiKey) {
       return NextResponse.json(
-        { error: "OpenTripMap API key not configured" },
+        { error: "No API keys configured. Please set GEOAPIFY_API_KEY or OPENTRIPMAP_API_KEY" },
         { status: 500 }
       );
     }
-
-    const geoapifyApiKey = process.env.GEOAPIFY_API_KEY || "";
 
   try {
     // Step 1: Check local weather for next 12 hours
@@ -605,10 +606,14 @@ export async function GET(request: NextRequest) {
     response.recommendations = enrichedPlaces;
 
     return NextResponse.json(response);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Recommendations error:", error);
+    const errorMessage = error?.message || "Failed to generate recommendations";
     return NextResponse.json(
-      { error: "Failed to generate recommendations" },
+      { 
+        error: "Failed to generate recommendations",
+        details: process.env.NODE_ENV === "development" ? errorMessage : undefined
+      },
       { status: 500 }
     );
   }
