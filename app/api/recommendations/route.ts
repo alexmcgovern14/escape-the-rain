@@ -253,7 +253,7 @@ export async function GET(request: NextRequest) {
     // Check more candidates to increase chances of finding dry places
     const topCandidates = filteredCandidates
       .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, 50); // Increased from 20 to 50 to check more places
+      .slice(0, Math.max(50, Math.min(filteredCandidates.length, 100))); // Check up to 100 candidates if available
     
     if (topCandidates.length === 0) {
       console.log("No candidate places found after filtering user location");
@@ -279,6 +279,8 @@ export async function GET(request: NextRequest) {
       }
     }
     console.log(`Got weather results for ${weatherResults.size} locations`);
+    const weatherSuccessRate = coordinates.length > 0 ? Math.round((weatherResults.size / coordinates.length) * 100) : 0;
+    console.log(`Weather check success rate: ${weatherResults.size}/${coordinates.length} (${weatherSuccessRate}%)`);
 
     // Step 5: Filter to dry places and sort by distance
     // Use strict mode: must not be raining now AND must not rain in next N hours
@@ -305,6 +307,9 @@ export async function GET(request: NextRequest) {
       .filter((item): item is NonNullable<typeof item> => item !== null && item.isDryToday)
       .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
       .slice(0, 5); // Take top 5
+
+    const wetCount = topCandidates.length - dryPlaces.length;
+    console.log(`Weather analysis: ${dryPlaces.length} dry places, ${wetCount} wet places out of ${topCandidates.length} candidates checked`);
 
     // Step 6: Enrich places with POI information
     console.log(`Enriching ${dryPlaces.length} places with POI data...`);
@@ -351,8 +356,8 @@ export async function GET(request: NextRequest) {
       });
     }
     
-    // If we found fewer than 3 dry places and we're in auto mode, try extending search
-    if (enrichedPlaces.length < 3 && useAutoSearch) {
+    // If we found fewer than 5 dry places and we're in auto mode, try extending search
+    if (enrichedPlaces.length < 5 && useAutoSearch) {
       // If we only searched 25km, extend to 50km
       if (searchRadius === 25) {
         const extendedRadius = 50;
