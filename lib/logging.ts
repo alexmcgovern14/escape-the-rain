@@ -29,10 +29,17 @@ export interface SearchLogEntry {
 const LOG_DIR = path.join(process.cwd(), "logs");
 const LOG_FILE = path.join(LOG_DIR, "api-usage.log");
 
+// Check if we're in a serverless environment (Vercel, etc.)
+// In serverless, filesystem is read-only except /tmp, so we skip file logging
+const isServerless = !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME || !!process.env.VERCEL_ENV;
+
 /**
- * Ensure log directory exists
+ * Ensure log directory exists (only in non-serverless environments)
  */
 async function ensureLogDir(): Promise<void> {
+  if (isServerless) {
+    return; // Skip file operations in serverless
+  }
   if (!existsSync(LOG_DIR)) {
     await mkdir(LOG_DIR, { recursive: true });
   }
@@ -43,24 +50,37 @@ async function ensureLogDir(): Promise<void> {
  */
 export async function logSearchResult(entry: SearchLogEntry): Promise<void> {
   try {
-    await ensureLogDir();
-    
-    const logLine = JSON.stringify(entry) + "\n";
-    await appendFile(LOG_FILE, logLine, "utf-8");
-    
-    // Also log to console for immediate visibility
+    // Always log to console (Vercel captures this automatically)
     console.log(`[LOG] Search at (${entry.location.lat}, ${entry.location.lon}): ${entry.placesFound} places from ${entry.primarySource} (${entry.apiSources.join(", ")})`);
+    console.log(`[LOG] Dry places found: ${entry.dryPlacesFound}, API sources: ${entry.apiSources.join(", ")}, Geoapify: ${entry.geoapifyCount || 0}, Nominatim: ${entry.nominatimCount || 0}, OpenTripMap: ${entry.opentripmapCount || 0}`);
+    
+    // Only write to file in non-serverless environments (local development)
+    if (!isServerless) {
+      await ensureLogDir();
+      const logLine = JSON.stringify(entry) + "\n";
+      await appendFile(LOG_FILE, logLine, "utf-8");
+    }
   } catch (error) {
-    console.error("[LOG ERROR] Failed to write log entry:", error);
-    // Don't throw - logging failures shouldn't break the app
+    // Silently fail - logging shouldn't break the app
+    // Only log errors in development
+    if (!isServerless) {
+      console.error("[LOG ERROR] Failed to write log entry:", error);
+    }
   }
 }
 
 /**
  * Get recent log entries (for analysis/debugging)
+ * Note: In serverless environments, this will return empty array
+ * as file logging is disabled. Use Vercel logs dashboard instead.
  */
 export async function getRecentLogs(limit: number = 100): Promise<SearchLogEntry[]> {
   try {
+    // In serverless, file logs don't exist
+    if (isServerless) {
+      return [];
+    }
+    
     if (!existsSync(LOG_FILE)) {
       return [];
     }
@@ -74,7 +94,9 @@ export async function getRecentLogs(limit: number = 100): Promise<SearchLogEntry
       .map((line) => JSON.parse(line) as SearchLogEntry)
       .reverse(); // Most recent first
   } catch (error) {
-    console.error("[LOG ERROR] Failed to read logs:", error);
+    if (!isServerless) {
+      console.error("[LOG ERROR] Failed to read logs:", error);
+    }
     return [];
   }
 }
