@@ -29,7 +29,7 @@ export default function DestinationCard({ destination, index }: DestinationCardP
   const hasPOIData = destination.place.nearbyPOIs && destination.place.nearbyPOIs.length > 0;
   
   // Priority 1: Use nearbyPOIs array if available (these are actual POI categories)
-  if (hasPOIData) {
+  if (hasPOIData && destination.place.nearbyPOIs) {
     // Filter out "attractions" as it's too vague and appears on every location
     const filteredPOIs = destination.place.nearbyPOIs.filter(poi => poi.toLowerCase() !== "attractions");
     thingsToDo.push(...filteredPOIs.slice(0, 5));
