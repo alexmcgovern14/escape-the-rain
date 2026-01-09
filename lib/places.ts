@@ -284,8 +284,12 @@ export async function fetchNearbyPlacesWithSources(
   lat: number,
   lon: number,
   radiusKm: number,
-  apiKey: string
+  apiKey: string,
+  failedApis?: Set<"nominatim" | "opentripmap">
 ): Promise<PlacesResult> {
+  // Track failed APIs to avoid retrying in same request
+  const failedApisSet = failedApis || new Set<"nominatim" | "opentripmap">();
+  
   const apiSources: Array<"geoapify" | "nominatim" | "opentripmap" | "fallback"> = [];
   let geoapifyPlaces: Place[] = [];
   let nominatimPlaces: Place[] = [];
@@ -325,15 +329,18 @@ export async function fetchNearbyPlacesWithSources(
   }
 
   // Try Nominatim API as fallback (free, reliable, good UK coverage for settlements)
-  // Use a timeout to avoid waiting too long
+  // Skip if already failed in this request
   let nominatimSuccess = false;
-  try {
-    console.log(`[API] Attempting Nominatim API`);
-    const nominatimPromise = fetchPlacesFromNominatim(lat, lon, radiusKm);
-    const timeoutPromise = new Promise<Place[]>((resolve) => 
-      setTimeout(() => resolve([]), 8000) // 8 second timeout
-    );
-    nominatimPlaces = await Promise.race([nominatimPromise, timeoutPromise]);
+  if (failedApisSet.has("nominatim")) {
+    console.log(`[API] Skipping Nominatim - already failed in this request`);
+  } else {
+    try {
+      console.log(`[API] Attempting Nominatim API`);
+      const nominatimPromise = fetchPlacesFromNominatim(lat, lon, radiusKm, failedApisSet);
+      const timeoutPromise = new Promise<Place[]>((resolve) => 
+        setTimeout(() => resolve([]), 8000) // 8 second timeout
+      );
+      nominatimPlaces = await Promise.race([nominatimPromise, timeoutPromise]);
     
     if (nominatimPlaces.length >= 5 && geoapifyPlaces.length === 0) {
       console.log(`[API SUCCESS] Nominatim returned ${nominatimPlaces.length} places`);
@@ -355,13 +362,23 @@ export async function fetchNearbyPlacesWithSources(
     } else {
       console.log(`[API FAIL] Nominatim returned 0 places (may have timed out)`);
     }
-  } catch (error) {
-    console.log(`[API FAIL] Nominatim error:`, error);
+    } catch (error: any) {
+      console.log(`[API FAIL] Nominatim error:`, error);
+      // Check if it's a 403 error and mark as failed
+      if (error?.status === 403 || error?.message?.includes('403') || error?.response?.status === 403) {
+        failedApisSet.add("nominatim");
+        console.log(`[API] Marking Nominatim as failed (403 Forbidden) - will skip in future calls`);
+      }
+    }
   }
 
   // Fallback to OpenTripMap
+  // Skip if already failed in this request
   let data: any = null;
-  if (!apiKey) {
+  if (failedApisSet.has("opentripmap")) {
+    console.log(`[API] Skipping OpenTripMap - already failed in this request`);
+    data = null;
+  } else if (!apiKey) {
     console.error(`[API FAIL] OpenTripMap: API key not provided`);
     console.error(`[API ERROR DETAILS] Error Type: Missing API Key | Location: ${lat},${lon} | Radius: ${radiusKm}km`);
     data = null;
@@ -513,6 +530,9 @@ export async function fetchNearbyPlacesWithSources(
     if (errorMsg === "null" || errorMsg === null) {
       console.error(`[API ERROR DETAILS] Likely Cause: Invalid API key or request parameters. Check OPENTRIPMAP_API_KEY in .env`);
     }
+    // Mark as failed and skip in future calls
+    failedApisSet.add("opentripmap");
+    console.log(`[API] Marking OpenTripMap as failed - will skip in future calls`);
     // Don't return here - let it fall through to check if we have other sources
     data = null;
   }
@@ -684,10 +704,17 @@ export async function fetchNearbyPlacesWithSources(
 async function fetchPlacesFromNominatim(
   lat: number,
   lon: number,
-  radiusKm: number
+  radiusKm: number,
+  failedApis?: Set<"nominatim" | "opentripmap">
 ): Promise<Place[]> {
   const places: Place[] = [];
   const seenIds = new Set<string>();
+  
+  // Skip if already marked as failed
+  if (failedApis?.has("nominatim")) {
+    console.log(`[API] Skipping Nominatim - already failed`);
+    return [];
+  }
   
   // Calculate bounding box
   const latDelta = radiusKm / 111;
@@ -754,6 +781,12 @@ async function fetchPlacesFromNominatim(
           console.error(`[API ERROR DETAILS] Likely Cause: Rate limit exceeded. Nominatim requires 1 request per second.`);
         } else if (response.status === 403) {
           console.error(`[API ERROR DETAILS] Likely Cause: Forbidden - User-Agent may be blocked or invalid`);
+          // Mark as failed and return early - no point trying more calls
+          if (failedApis) {
+            failedApis.add("nominatim");
+            console.log(`[API] Marking Nominatim as failed (403 Forbidden) - will skip in future calls`);
+          }
+          return [];
         }
         continue;
       }
@@ -870,7 +903,13 @@ async function fetchPlacesFromNominatim(
     }
     
     // Limit grid points to avoid too many requests (max 10)
-    const pointsToCheck = gridPoints.slice(0, 10);
+    // Skip reverse geocoding if Nominatim already failed
+    if (failedApis?.has("nominatim")) {
+      console.log(`[API] Skipping Nominatim reverse geocoding - already failed`);
+      return places;
+    }
+    
+    const pointsToCheck = gridPoints.slice(0, 5); // Reduced from 10 to 5 for performance
   
   for (const point of pointsToCheck) {
     try {
@@ -917,6 +956,14 @@ async function fetchPlacesFromNominatim(
         console.error(`[API ERROR DETAILS] Response: ${errorText.substring(0, 200)}`);
         if (response.status === 429) {
           console.error(`[API ERROR DETAILS] Likely Cause: Rate limit exceeded. Nominatim requires 1 request per second.`);
+        } else if (response.status === 403) {
+          console.error(`[API ERROR DETAILS] Likely Cause: Forbidden - User-Agent may be blocked or invalid`);
+          // Mark as failed and break out of loop
+          if (failedApis) {
+            failedApis.add("nominatim");
+            console.log(`[API] Marking Nominatim as failed (403 Forbidden) - will skip in future calls`);
+          }
+          break; // Exit the reverse geocoding loop
         }
         continue;
       }
@@ -1039,10 +1086,12 @@ async function fetchPlacesFromGeoapify(
 
   try {
     const url = new URL("https://api.geoapify.com/v2/places");
-    // Use 'administrative' category - it includes cities, towns, villages, etc.
-    // We'll filter client-side to only include actual settlements (not counties/districts)
-    // Note: Geoapify doesn't support 'place.city' etc. categories - those don't exist in their API
-    url.searchParams.set("categories", "administrative");
+    // Combine 'populated_place' and 'administrative' categories for comprehensive coverage
+    // populated_place gets settlements (cities, towns, villages, hamlets)
+    // administrative gets boroughs/districts that may also be legitimate destinations
+    // Geoapify supports populated_place.city, populated_place.town, populated_place.village, populated_place.hamlet
+    // We'll filter client-side to exclude counties and high-level administrative areas
+    url.searchParams.set("categories", "populated_place,administrative");
     url.searchParams.set("filter", `circle:${lon},${lat},${radiusMeters}`);
     url.searchParams.set("limit", "50");
     url.searchParams.set("apiKey", apiKey);
@@ -1124,36 +1173,65 @@ async function fetchPlacesFromGeoapify(
     let administrativeFiltered = 0;
     let settlementFiltered = 0;
     let nameFiltered = 0;
+    let noCoordinatesCount = 0;
+    let noNameCount = 0;
+    let duplicateCount = 0;
+    
+    // Track filtered places for detailed logging
+    const filteredByDistance: Array<{name: string, distance: number, reason: string}> = [];
+    const filteredByType: Array<{name: string, reason: string}> = [];
+    const passedPlaces: Array<{name: string, distance: number, hasSettlement: boolean}> = [];
 
     // Geoapify returns GeoJSON format with features array
     if (data.features && Array.isArray(data.features)) {
+      console.log(`[FILTER] Processing ${data.features.length} features from Geoapify (radius: ${radiusKm}km)`);
       
       for (const feature of data.features) {
         const properties = feature.properties;
         const geometry = feature.geometry;
 
-        if (!geometry?.coordinates) continue;
+        if (!geometry?.coordinates) {
+          noCoordinatesCount++;
+          continue;
+        }
 
         // Geoapify coordinates are [lon, lat]
         const [placeLon, placeLat] = geometry.coordinates;
         const distance = haversineDistance(lat, lon, placeLat, placeLon);
 
-        // Filter out places within 1km of user location
-        if (distance <= 1 || distance > radiusKm) {
-          filteredCount++;
-          continue;
-        }
-
-        // Extract name - prefer city, then town, then village, then formatted address
+        // Extract name early for logging
         const name = 
           properties.city ||
           properties.town ||
           properties.village ||
           properties.hamlet ||
           properties.name ||
-          properties.formatted?.split(",")[0]?.trim();
+          properties.formatted?.split(",")[0]?.trim() ||
+          "UNNAMED";
 
-        if (!name) continue;
+        // Filter out places within 1km of user location
+        if (distance <= 1) {
+          filteredCount++;
+          filteredByDistance.push({name, distance, reason: `too close (${distance.toFixed(2)}km <= 1km)`});
+          continue;
+        }
+        
+        // For 50km+ searches, allow places slightly beyond radius (up to 10% over) to account for Geoapify's approximation
+        // This ensures we don't miss places that are just outside the exact radius
+        // For smaller searches (10km, 25km), use exact radius to maintain precision
+        const maxAllowedDistance = radiusKm >= 50 ? radiusKm * 1.1 : radiusKm;
+        
+        if (distance > maxAllowedDistance) {
+          filteredCount++;
+          filteredByDistance.push({name, distance, reason: `beyond radius (${distance.toFixed(2)}km > ${maxAllowedDistance.toFixed(1)}km)`});
+          continue;
+        }
+
+        // Check if name was extracted
+        if (!name || name === "UNNAMED") {
+          noNameCount++;
+          continue;
+        }
 
         // Check if this is actually a settlement by looking at the properties
         // Geoapify returns city, town, village, hamlet properties for settlements
@@ -1245,69 +1323,87 @@ async function fetchPlacesFromGeoapify(
         ];
         
         // Exclude obvious administrative areas by name
-        // Note: Administrative districts often have settlement properties but aren't actual settlements
+        // Note: We trust settlement properties (city/town/village/hamlet) as indicators of legitimate destinations
         const isKnownCounty = ukCounties.includes(nameLower);
         const isKnownAdministrativeDistrict = ukAdministrativeDistricts.includes(nameLower);
         
-        // Filter out administrative districts and boroughs (even if they have settlement properties)
-        // These are administrative areas, not actual towns/villages
+        // Only check for administrative districts if NO settlement property exists
+        // If it has settlement properties, trust Geoapify's classification
         const isAdministrativeDistrict = 
-          nameLower.includes("london borough of") ||
-          nameLower.includes("borough of") ||
           nameLower.match(/\b(district|county|council|region|authority|administrative)\b/i) ||
           // Filter "South/North/East/West X" patterns that are districts (like "South Cambridgeshire")
-          (/^(south|north|east|west|mid)\s+[a-z]+\s*(district|county|council|borough)$/i.test(name)) ||
-          // Filter boroughs unless it's a known town name
-          (nameLower.includes("borough") && !nameLower.match(/\b(town|city|village|hamlet)\b/i) && 
-           !["knaresborough", "attleborough", "princes risborough", "scarborough", "marlborough", "boroughbridge"].some(town => nameLower.includes(town)));
+          (/^(south|north|east|west|mid)\s+[a-z]+\s*(district|county|council)$/i.test(name));
         
-        // Check categories - exclude high-level administrative categories
+        // Check categories - exclude ONLY high-level administrative categories
+        // Allow district_level and borough if they have settlement properties
         const isHighLevelAdministrative = kinds.some((k: string) => 
           k.includes("administrative.country") ||
           k.includes("administrative.country_part") ||
           k.includes("administrative.state") ||
           k.includes("administrative.province") ||
-          k.includes("administrative.region") ||
-          k.includes("administrative.district_level")
+          k.includes("administrative.region")
+          // REMOVED: administrative.district_level - allow this if it has settlement properties
         );
         
-        // Even if it has settlement properties, filter out administrative districts
-        // Administrative districts often have "city" or "town" properties but aren't actual settlements
+        // Primary filtering logic: Trust settlement properties
         if (hasSettlementProperty) {
-          // Has settlement property - but still filter administrative districts
-          if (isKnownCounty || isKnownAdministrativeDistrict || isAdministrativeDistrict || isHighLevelAdministrative) {
+          // Has settlement property (city/town/village/hamlet) - this is a legitimate destination
+          // Only exclude if it's a known county (too large) or high-level administrative area
+          if (isKnownCounty) {
             nameFiltered++;
+            filteredByType.push({name, reason: `known county (has settlement property but is county)`});
             continue;
           }
-          // Allow it through - it has settlement properties and isn't administrative
+          if (isHighLevelAdministrative) {
+            nameFiltered++;
+            filteredByType.push({name, reason: `high-level administrative (${kinds.join(", ")})`});
+            continue;
+          }
+          // Allow through - settlement properties indicate it's a real place to visit
+          passedPlaces.push({name, distance, hasSettlement: true});
         } else {
-          // No settlement property - need to be more careful
-          // Exclude if it's clearly an administrative area or known county/district
-          if (isKnownCounty || isKnownAdministrativeDistrict || isAdministrativeDistrict || isHighLevelAdministrative) {
-            if (isKnownCounty || isKnownAdministrativeDistrict || isAdministrativeDistrict) {
-              nameFiltered++;
-            } else {
-              administrativeFiltered++;
-            }
+          // No settlement property - be more careful
+          // Exclude known counties, administrative districts, and high-level administrative areas
+          if (isKnownCounty) {
+            nameFiltered++;
+            filteredByType.push({name, reason: `known county`});
+            continue;
+          }
+          if (isKnownAdministrativeDistrict) {
+            nameFiltered++;
+            filteredByType.push({name, reason: `known administrative district`});
+            continue;
+          }
+          if (isHighLevelAdministrative) {
+            administrativeFiltered++;
+            filteredByType.push({name, reason: `high-level administrative (${kinds.join(", ")})`});
             continue;
           }
           
-          // If no settlement property but also not clearly administrative, be more lenient
-          // Allow places that don't look like administrative areas
+          // Check name patterns for administrative-looking names (only if no settlement property)
           const looksLikeAdministrative = 
             nameLower.includes("county") ||
             nameLower.includes("district") ||
             nameLower.includes("council") ||
             nameLower.includes("region") ||
             nameLower.includes("authority") ||
-            nameLower.includes("administrative") ||
-            nameLower.includes("borough");
+            nameLower.includes("administrative");
+            // REMOVED: nameLower.includes("borough") - allow boroughs if they have settlement properties
           
-          // Allow if it doesn't look administrative and has a reasonable name
-          if (looksLikeAdministrative || name.length <= 2) {
+          if (looksLikeAdministrative) {
             settlementFiltered++;
+            filteredByType.push({name, reason: `name pattern looks administrative (no settlement property)`});
             continue;
           }
+          
+          if (name.length <= 2) {
+            settlementFiltered++;
+            filteredByType.push({name, reason: `name too short (${name.length} chars)`});
+            continue;
+          }
+          
+          // Passed through without settlement property
+          passedPlaces.push({name, distance, hasSettlement: false});
         }
 
         const id = `geoapify-${name.toLowerCase().replace(/\s+/g, '-')}-${placeLat.toFixed(3)}-${placeLon.toFixed(3)}`;
@@ -1326,14 +1422,72 @@ async function fetchPlacesFromGeoapify(
 
     // Remove duplicates by name (keep closest)
     const uniquePlaces = new Map<string, Place>();
+    const duplicateDetails: Array<{name: string, kept: number, removed: number}> = [];
+    
     for (const place of places) {
       const nameKey = place.name.toLowerCase().trim();
-      if (!uniquePlaces.has(nameKey) || uniquePlaces.get(nameKey)!.distanceKm > place.distanceKm) {
+      if (!uniquePlaces.has(nameKey)) {
         uniquePlaces.set(nameKey, place);
+      } else {
+        const existing = uniquePlaces.get(nameKey)!;
+        if (place.distanceKm < existing.distanceKm) {
+          duplicateDetails.push({
+            name: place.name,
+            kept: place.distanceKm,
+            removed: existing.distanceKm
+          });
+          uniquePlaces.set(nameKey, place);
+        } else {
+          duplicateDetails.push({
+            name: place.name,
+            kept: existing.distanceKm,
+            removed: place.distanceKm
+          });
+          duplicateCount++;
+        }
       }
     }
 
     const result = Array.from(uniquePlaces.values()).sort((a, b) => a.distanceKm - b.distanceKm);
+    
+    // Detailed logging
+    console.log(`[FILTER] Summary: ${result.length} unique places from ${data.features?.length || 0} features`);
+    console.log(`[FILTER] Breakdown: ${filteredCount} distance-filtered, ${noCoordinatesCount} no coordinates, ${noNameCount} no name, ${administrativeFiltered} administrative, ${settlementFiltered} non-settlement, ${nameFiltered} name-based, ${duplicateCount} duplicates removed`);
+    
+    if (filteredByDistance.length > 0) {
+      console.log(`[FILTER] Distance-filtered (${filteredByDistance.length}):`);
+      filteredByDistance.slice(0, 10).forEach(f => {
+        console.log(`  - ${f.name}: ${f.reason}`);
+      });
+      if (filteredByDistance.length > 10) {
+        console.log(`  ... and ${filteredByDistance.length - 10} more`);
+      }
+    }
+    
+    if (filteredByType.length > 0) {
+      console.log(`[FILTER] Type-filtered (${filteredByType.length}):`);
+      filteredByType.forEach(f => {
+        console.log(`  - ${f.name}: ${f.reason}`);
+      });
+    }
+    
+    if (duplicateDetails.length > 0) {
+      console.log(`[FILTER] Duplicates removed (${duplicateDetails.length}):`);
+      duplicateDetails.slice(0, 10).forEach(d => {
+        console.log(`  - ${d.name}: kept ${d.kept.toFixed(1)}km, removed ${d.removed.toFixed(1)}km`);
+      });
+      if (duplicateDetails.length > 10) {
+        console.log(`  ... and ${duplicateDetails.length - 10} more`);
+      }
+    }
+    
+    if (passedPlaces.length > 0) {
+      console.log(`[FILTER] Places that passed (${passedPlaces.length}):`);
+      passedPlaces.forEach(p => {
+        console.log(`  - ${p.name}: ${p.distance.toFixed(1)}km (settlement: ${p.hasSettlement ? "yes" : "no"})`);
+      });
+    }
+    
     console.log(`[API] Geoapify processed ${result.length} unique places after filtering (filtered: ${filteredCount} total, ${administrativeFiltered} administrative, ${settlementFiltered} non-settlement, ${nameFiltered} name-based)`);
     return result;
   } catch (error: any) {

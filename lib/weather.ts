@@ -52,16 +52,29 @@ export async function checkWeatherAtLocation(
   const maxPrecipitation = Math.max(...nextHours);
   const willRainSoon = maxPrecipitation > 0.1;
 
+  // Check full 24-hour forecast to see when rain is expected
+  const full24Hours = data.hourly.precipitation.slice(0, 24);
+  const firstRainIn24Hours = full24Hours.findIndex((p) => p > 0.1);
+
   // Generate summary
   let summary = "Dry all day";
   if (isRainingNow) {
     summary = "Raining now";
   } else if (willRainSoon) {
+    // Rain expected within the next hoursToCheck hours
     const firstRainIndex = nextHours.findIndex((p) => p > 0.1);
     if (firstRainIndex >= 0) {
       const hoursUntilRain = firstRainIndex;
       summary = `Dry now, rain expected in ${hoursUntilRain} hour${hoursUntilRain !== 1 ? "s" : ""}`;
     }
+  } else if (firstRainIn24Hours >= 0) {
+    // Dry for next hoursToCheck hours, but rain expected later today
+    // Show how many hours until rain
+    const hoursUntilRain = firstRainIn24Hours;
+    summary = `Dry for next ${hoursUntilRain} hour${hoursUntilRain !== 1 ? "s" : ""}`;
+  } else {
+    // No rain in next 24 hours
+    summary = "Dry all day";
   }
 
   return {
@@ -76,7 +89,8 @@ export async function checkWeatherAtLocation(
  * Open-Meteo supports multi-point requests
  */
 export async function checkWeatherBulk(
-  coordinates: Array<{ lat: number; lon: number }>
+  coordinates: Array<{ lat: number; lon: number }>,
+  hoursAhead: number = 4
 ): Promise<Map<string, WeatherCheckResult>> {
   // Open-Meteo allows up to 100 locations per request
   // For simplicity, we'll batch them if needed
@@ -155,21 +169,34 @@ export async function checkWeatherBulk(
       const currentPrecipitation = precipitation[0] || 0;
       const isRainingNow = currentPrecipitation > 0.1;
 
-      // Use 4 hours as default for bulk checks (can be made configurable if needed)
-      const hoursToCheck = 4;
+      // Use provided hoursAhead parameter
+      const hoursToCheck = Math.min(hoursAhead, 24);
       const nextHours = precipitation.slice(0, hoursToCheck);
       const maxPrecipitation = Math.max(...nextHours, 0);
       const willRainSoon = maxPrecipitation > 0.1;
+
+      // Check full 24-hour forecast to see when rain is expected
+      const full24Hours = precipitation.slice(0, 24);
+      const firstRainIn24Hours = full24Hours.findIndex((p) => p > 0.1);
 
       let summary = "Dry all day";
       if (isRainingNow) {
         summary = "Raining now";
       } else if (willRainSoon) {
+        // Rain expected within the next hoursToCheck hours
         const firstRainIndex = nextHours.findIndex((p) => p > 0.1);
         if (firstRainIndex >= 0) {
           const hoursUntilRain = firstRainIndex;
           summary = `Dry now, rain expected in ${hoursUntilRain} hour${hoursUntilRain !== 1 ? "s" : ""}`;
         }
+      } else if (firstRainIn24Hours >= 0) {
+        // Dry for next hoursToCheck hours, but rain expected later today
+        // Show how many hours until rain
+        const hoursUntilRain = firstRainIn24Hours;
+        summary = `Dry for next ${hoursUntilRain} hour${hoursUntilRain !== 1 ? "s" : ""}`;
+      } else {
+        // No rain in next 24 hours
+        summary = "Dry all day";
       }
 
       const key = `${coord.lat},${coord.lon}`;

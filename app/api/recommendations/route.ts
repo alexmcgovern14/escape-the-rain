@@ -112,72 +112,59 @@ export async function GET(request: NextRequest) {
     // Even if user's location is dry, show them other nearby dry locations
 
     // Step 3: Fetch candidate places using user-specified search distance or auto logic
+    // Track failed APIs to avoid retrying in same request
+    const failedApis = new Set<"nominatim" | "opentripmap">();
+    
     let candidatePlaces: any[] = [];
     let searchRadius: number;
     let placesResult: Awaited<ReturnType<typeof fetchNearbyPlacesWithSources>> | null = null;
     
     if (useAutoSearch) {
-      // Auto logic: search 10km first, then 25km, then 50km, then 100km if needed
-      searchRadius = 10;
+      // Auto logic: fetch all distances in parallel, but prioritize closer results
+      // This ensures we check nearby places first while being fast
+      searchRadius = 50;
       try {
-        // First try: 1-10km
-        placesResult = await fetchNearbyPlacesWithSources(
-          latitude,
-          longitude,
-          searchRadius,
-          apiKey
-        );
-        candidatePlaces = placesResult.places.filter(place => {
+        // Fetch 10km, 25km, and 50km in parallel for speed
+        const [result10km, result25km, result50km] = await Promise.all([
+          fetchNearbyPlacesWithSources(latitude, longitude, 10, apiKey, failedApis),
+          fetchNearbyPlacesWithSources(latitude, longitude, 25, apiKey, failedApis),
+          fetchNearbyPlacesWithSources(latitude, longitude, 50, apiKey, failedApis),
+        ]);
+        
+        // Filter and prioritize closer places: start with 10km, then add 25km, then 50km
+        const places10km = result10km.places.filter(place => {
           const distance = haversineDistance(latitude, longitude, place.lat, place.lon);
           return distance > 1 && distance <= 10;
         });
-        console.log(`[AUTO] Found ${candidatePlaces.length} candidate places within 1-10km`);
         
-        // Second try: 10-25km if we have very few places (< 5)
-        if (candidatePlaces.length < 5) {
-          searchRadius = 25;
-          console.log(`[AUTO] Only ${candidatePlaces.length} places found in 1-10km, extending to 10-25km`);
-          const extendedResult = await fetchNearbyPlacesWithSources(
-            latitude,
-            longitude,
-            searchRadius,
-            apiKey
-          );
-          const extendedPlaces = extendedResult.places.filter(place => {
-            const distance = haversineDistance(latitude, longitude, place.lat, place.lon);
-            return distance > 10 && distance <= 25;
-          });
-          candidatePlaces = [...candidatePlaces, ...extendedPlaces];
-          placesResult = {
-            ...extendedResult,
-            places: candidatePlaces,
-          };
-          console.log(`[AUTO] Found ${extendedPlaces.length} additional places in 10-25km (total: ${candidatePlaces.length})`);
+        const places25km = result25km.places.filter(place => {
+          const distance = haversineDistance(latitude, longitude, place.lat, place.lon);
+          return distance > 10 && distance <= 25;
+        });
+        
+        const places50km = result50km.places.filter(place => {
+          const distance = haversineDistance(latitude, longitude, place.lat, place.lon);
+          return distance > 25 && distance <= 50;
+        });
+        
+        // Combine: prioritize closer places (10km first, then 25km, then 50km)
+        candidatePlaces = [...places10km, ...places25km, ...places50km];
+        
+        // Use the result with the most places for metadata (prefer successful results)
+        // This ensures correct logging of API sources
+        if (result10km.places.length > 0 || result25km.places.length > 0 || result50km.places.length > 0) {
+          // Prefer 25km result (usually has good coverage), fallback to 10km, then 50km
+          placesResult = result25km.places.length > 0 ? result25km : 
+                        (result10km.places.length > 0 ? result10km : result50km);
+        } else {
+          // All failed, use 50km result (will show fallback)
+          placesResult = result50km;
         }
+        searchRadius = 50;
         
-        // Third try: 25-50km if we still have very few places (< 5)
-        if (candidatePlaces.length < 5) {
-          searchRadius = 50;
-          console.log(`[AUTO] Only ${candidatePlaces.length} places found in 1-25km, extending to 25-50km`);
-          const extendedResult = await fetchNearbyPlacesWithSources(
-            latitude,
-            longitude,
-            searchRadius,
-            apiKey
-          );
-          const extendedPlaces = extendedResult.places.filter(place => {
-            const distance = haversineDistance(latitude, longitude, place.lat, place.lon);
-            return distance > 25 && distance <= 50;
-          });
-          candidatePlaces = [...candidatePlaces, ...extendedPlaces];
-          placesResult = {
-            ...extendedResult,
-            places: candidatePlaces,
-          };
-          console.log(`[AUTO] Found ${extendedPlaces.length} additional places in 25-50km (total: ${candidatePlaces.length})`);
-        }
+        console.log(`[AUTO] Found ${places10km.length} places in 1-10km, ${places25km.length} in 10-25km, ${places50km.length} in 25-50km (total: ${candidatePlaces.length})`);
         
-        // Fourth try: 50-100km if we still have very few places (< 5)
+        // If we still have very few places (< 5), extend to 100km
         if (candidatePlaces.length < 5) {
           const finalRadius = 100;
           console.log(`[AUTO] Only ${candidatePlaces.length} places found in 1-50km, extending to 50-100km`);
@@ -185,7 +172,8 @@ export async function GET(request: NextRequest) {
             latitude,
             longitude,
             finalRadius,
-            apiKey
+            apiKey,
+            failedApis
           );
           const finalPlaces = finalResult.places.filter(place => {
             const distance = haversineDistance(latitude, longitude, place.lat, place.lon);
@@ -217,7 +205,8 @@ export async function GET(request: NextRequest) {
           latitude,
           longitude,
           searchRadius,
-          apiKey
+          apiKey,
+          failedApis
         );
         candidatePlaces = placesResult.places;
         console.log(`Found ${candidatePlaces.length} candidate places within ${searchRadius}km`);
@@ -230,7 +219,8 @@ export async function GET(request: NextRequest) {
             latitude,
             longitude,
             extendedRadius,
-            apiKey
+            apiKey,
+            failedApis
           );
           candidatePlaces = extendedResult.places;
           placesResult = extendedResult; // Use extended result for logging
@@ -311,18 +301,8 @@ export async function GET(request: NextRequest) {
     }));
 
     console.log(`Checking weather for ${coordinates.length} locations (after filtering user location, strictHours: ${strictHours})`);
-    // Use individual requests for now (more reliable than bulk)
-    const weatherResults = new Map<string, Awaited<ReturnType<typeof checkWeatherAtLocation>>>();
-    for (const coord of coordinates) {
-      try {
-        const result = await checkWeatherAtLocation(coord.lat, coord.lon, strictHours);
-        weatherResults.set(`${coord.lat},${coord.lon}`, result);
-        // Small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 100));
-      } catch (error) {
-        console.error(`Failed to check weather for ${coord.lat},${coord.lon}:`, error);
-      }
-    }
+    // Use bulk weather API to avoid rate limiting - single API call for all locations
+    const weatherResults = await checkWeatherBulk(coordinates, strictHours);
     console.log(`Got weather results for ${weatherResults.size} locations`);
     const weatherSuccessRate = coordinates.length > 0 ? Math.round((weatherResults.size / coordinates.length) * 100) : 0;
     console.log(`Weather check success rate: ${weatherResults.size}/${coordinates.length} (${weatherSuccessRate}%)`);
@@ -356,31 +336,21 @@ export async function GET(request: NextRequest) {
     const wetCount = topCandidates.length - dryPlaces.length;
     console.log(`Weather analysis: ${dryPlaces.length} dry places, ${wetCount} wet places out of ${topCandidates.length} candidates checked`);
 
-    // Step 6: Enrich places with POI information
-    console.log(`Enriching ${dryPlaces.length} places with POI data...`);
-    const enrichedPlaces = await Promise.all(
-      dryPlaces.map(async (item) => {
-        const poiData = await enrichPlaceWithPOIs(
-          item.place.lat,
-          item.place.lon,
-          item.place.name,
-          geoapifyApiKey
-        );
-        
-        // Add a small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
-        return {
-          place: {
-            ...item.place,
-            nearbyPOIs: poiData.nearbyPOIs,
-            poiSummary: poiData.poiSummary,
-          },
-          isDryToday: item.isDryToday,
-          rainSummary: item.rainSummary,
-        };
-      })
-    );
+    // Step 6: Return results immediately without POI enrichment for speed
+    // POI enrichment can be done client-side or in a separate request if needed
+    // This saves 8-10 seconds on the initial response
+    console.log(`Returning ${dryPlaces.length} dry places (POI enrichment skipped for performance)`);
+    const enrichedPlaces = dryPlaces.map((item) => {
+      return {
+        place: {
+          ...item.place,
+          // Don't set nearbyPOIs/poiSummary initially - they'll be undefined
+          // This allows the frontend to distinguish between "not enriched yet" and "enriched but empty"
+        },
+        isDryToday: item.isDryToday,
+        rainSummary: item.rainSummary,
+      };
+    });
 
     console.log(`Found ${enrichedPlaces.length} dry places`);
     
@@ -402,7 +372,10 @@ export async function GET(request: NextRequest) {
     }
     
     // If we found fewer than 5 dry places and we're in auto mode, try extending search
-    if (enrichedPlaces.length < 5 && useAutoSearch) {
+    // Early exit: If we already have 5+ dry places, skip extended search
+    if (enrichedPlaces.length >= 5) {
+      console.log(`[EXTENDED SEARCH] Skipping - already found ${enrichedPlaces.length} dry places (target: 5)`);
+    } else if (enrichedPlaces.length < 5 && useAutoSearch) {
       console.log(`[EXTENDED SEARCH] Triggered: Found ${enrichedPlaces.length} dry places, current searchRadius=${searchRadius}, useAutoSearch=${useAutoSearch}`);
       // Determine which tier we're at and extend from there
       // If we only searched 10km, extend to 25km
@@ -466,17 +439,23 @@ export async function GET(request: NextRequest) {
             .slice(0, 50);
           
           console.log(`[EXTENDED SEARCH] Filtered ${extendedWithDistance.length} places to ${extendedFiltered.length} after name/distance filtering`);
-          // Check weather for additional places
+          // Check weather for additional places in parallel
           console.log(`[EXTENDED SEARCH] Checking weather for ${extendedFiltered.length} additional places from 10-25km range`);
-          for (const place of extendedFiltered) {
+          const extendedWeatherPromises = extendedFiltered.map(async (place) => {
             try {
               console.log(`[EXTENDED SEARCH] Checking weather for ${place.name} at ${place.lat},${place.lon}`);
               const result = await checkWeatherAtLocation(place.lat, place.lon, strictHours);
-              weatherResults.set(`${place.lat},${place.lon}`, result);
               console.log(`[EXTENDED SEARCH] ${place.name}: ${result.summary} (dry: ${isDryToday(result, true)})`);
-              await new Promise(resolve => setTimeout(resolve, 100));
+              return { place, weather: result, error: null };
             } catch (error) {
               console.error(`[EXTENDED SEARCH] Failed to check weather for ${place.name} (${place.lat},${place.lon}):`, error);
+              return { place, weather: null, error };
+            }
+          });
+          const extendedWeatherResults = await Promise.all(extendedWeatherPromises);
+          for (const { place, weather } of extendedWeatherResults) {
+            if (weather) {
+              weatherResults.set(`${place.lat},${place.lon}`, weather);
             }
           }
           console.log(`[EXTENDED SEARCH] Weather check complete. Total weather results: ${weatherResults.size}`);
@@ -690,7 +669,8 @@ export async function GET(request: NextRequest) {
             latitude,
             longitude,
             finalRadius,
-            apiKey
+            apiKey,
+            failedApis
           );
           
           // Filter to only places between 50-100km
@@ -731,14 +711,20 @@ export async function GET(request: NextRequest) {
             
             console.log(`[EXTENDED SEARCH] Filtered ${finalWithDistance.length} places to ${finalFiltered.length} after name/distance filtering (50-100km)`);
             console.log(`[EXTENDED SEARCH] Checking weather for ${finalFiltered.length} additional places from 50-100km range`);
-            for (const place of finalFiltered) {
+            const finalWeatherPromises = finalFiltered.map(async (place) => {
               try {
                 const result = await checkWeatherAtLocation(place.lat, place.lon, strictHours);
-                weatherResults.set(`${place.lat},${place.lon}`, result);
                 console.log(`[EXTENDED SEARCH] ${place.name}: ${result.summary} (dry: ${isDryToday(result, true)})`);
-                await new Promise(resolve => setTimeout(resolve, 100));
+                return { place, weather: result, error: null };
               } catch (error) {
                 console.error(`[EXTENDED SEARCH] Failed to check weather for ${place.name}:`, error);
+                return { place, weather: null, error };
+              }
+            });
+            const finalWeatherResults = await Promise.all(finalWeatherPromises);
+            for (const { place, weather } of finalWeatherResults) {
+              if (weather) {
+                weatherResults.set(`${place.lat},${place.lon}`, weather);
               }
             }
             
@@ -947,7 +933,8 @@ export async function GET(request: NextRequest) {
             latitude,
             longitude,
             finalRadius,
-            apiKey
+            apiKey,
+            failedApis
           );
           
           // Filter to only places between 50-100km
@@ -988,14 +975,20 @@ export async function GET(request: NextRequest) {
             
             console.log(`[EXTENDED SEARCH] Filtered ${finalWithDistance.length} places to ${finalFiltered.length} after name/distance filtering (50-100km)`);
             console.log(`[EXTENDED SEARCH] Checking weather for ${finalFiltered.length} additional places from 50-100km range`);
-            for (const place of finalFiltered) {
+            const finalWeatherPromises = finalFiltered.map(async (place) => {
               try {
                 const result = await checkWeatherAtLocation(place.lat, place.lon, strictHours);
-                weatherResults.set(`${place.lat},${place.lon}`, result);
                 console.log(`[EXTENDED SEARCH] ${place.name}: ${result.summary} (dry: ${isDryToday(result, true)})`);
-                await new Promise(resolve => setTimeout(resolve, 100));
+                return { place, weather: result, error: null };
               } catch (error) {
                 console.error(`[EXTENDED SEARCH] Failed to check weather for ${place.name}:`, error);
+                return { place, weather: null, error };
+              }
+            });
+            const finalWeatherResults = await Promise.all(finalWeatherPromises);
+            for (const { place, weather } of finalWeatherResults) {
+              if (weather) {
+                weatherResults.set(`${place.lat},${place.lon}`, weather);
               }
             }
             
@@ -1124,15 +1117,21 @@ export async function GET(request: NextRequest) {
         
         if (newPlaces.length > 0) {
           console.log(`[EXTENDED SEARCH] Checking weather for ${Math.min(newPlaces.length, 50)} additional places from ${minDistance}-${maxDistance}km range`);
-          for (const place of newPlaces.slice(0, 50)) { // Increased from 30 to 50
+          const newPlacesWeatherPromises = newPlaces.slice(0, 50).map(async (place) => {
             try {
               console.log(`[EXTENDED SEARCH] Checking weather for ${place.name} at ${place.lat},${place.lon}`);
               const result = await checkWeatherAtLocation(place.lat, place.lon, strictHours);
-              weatherResults.set(`${place.lat},${place.lon}`, result);
               console.log(`[EXTENDED SEARCH] ${place.name}: ${result.summary} (dry: ${isDryToday(result, true)})`);
-              await new Promise(resolve => setTimeout(resolve, 100));
+              return { place, weather: result, error: null };
             } catch (error) {
               console.error(`[EXTENDED SEARCH] Failed to check weather for ${place.name} (${place.lat},${place.lon}):`, error);
+              return { place, weather: null, error };
+            }
+          });
+          const newPlacesWeatherResults = await Promise.all(newPlacesWeatherPromises);
+          for (const { place, weather } of newPlacesWeatherResults) {
+            if (weather) {
+              weatherResults.set(`${place.lat},${place.lon}`, weather);
             }
           }
           
@@ -1225,6 +1224,19 @@ export async function GET(request: NextRequest) {
     });
     
     response.recommendations = enrichedPlaces;
+    
+    // If no dry places found, add error message with furthest distance checked
+    if (enrichedPlaces.length === 0 && topCandidates.length > 0) {
+      // Find the furthest place that was checked for weather
+      const furthestPlace = topCandidates.reduce((furthest, current) => {
+        return current.distanceKm > furthest.distanceKm ? current : furthest;
+      }, topCandidates[0]);
+      
+      // Round to nearest km for display
+      const furthestDistanceKm = Math.round(furthestPlace.distanceKm);
+      response.error = `No dry places within ${furthestDistanceKm}km!`;
+      console.log(`[ERROR] ${response.error} (checked ${topCandidates.length} places, furthest: ${furthestPlace.name} at ${furthestPlace.distanceKm.toFixed(1)}km)`);
+    }
 
     return NextResponse.json(response);
   } catch (error: any) {

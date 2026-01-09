@@ -2,207 +2,386 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import LocationPicker from "@/components/LocationPicker";
-import StatusCard from "@/components/StatusCard";
-import DestinationsList from "@/components/DestinationsList";
+import LocationSelector from "@/components/LocationSelector";
+import EmptyState from "@/components/EmptyState";
+import DestinationCard from "@/components/DestinationCard";
+import Footer from "@/components/Footer";
 import type { RecommendationResponse } from "@/lib/types";
 
 // Dynamically import MapView to avoid SSR issues with Mapbox
 const MapView = dynamic(() => import("@/components/MapView"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-96 bg-gray-100 rounded-lg flex items-center justify-center">
+    <div className="w-full h-[400px] lg:h-[600px] bg-gray-100 rounded-lg flex items-center justify-center">
       <p className="text-gray-500">Loading map...</p>
     </div>
   ),
 });
 
 export default function Home() {
+  const [selectedLocation, setSelectedLocation] = useState<string>("");
+  const [isExiting, setIsExiting] = useState(false);
   const [status, setStatus] = useState<"loading" | "error" | "not-raining" | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>();
   const [data, setData] = useState<RecommendationResponse | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [strictHours, setStrictHours] = useState<number>(4); // Default: 4 hours
-  const [searchDistance, setSearchDistance] = useState<string>("auto"); // Default: "auto" (uses 50km -> 100km logic)
+  const [searchDistance, setSearchDistance] = useState<string>("auto"); // Default: "auto"
+  const [showSettings, setShowSettings] = useState(false);
+  const [poiLoading, setPoiLoading] = useState(false);
 
   const handleLocationSelect = async (lat: number, lon: number, source: "geolocation" | "manual", locationName?: string) => {
-    setUserLocation({ lat, lon });
+    // Trigger exit animation
+    setIsExiting(true);
     setStatus("loading");
     setStatusMessage("Checking weather and finding dry places...");
     setData(null);
+    setUserLocation({ lat, lon });
 
+    // After exit completes, fetch data
+    setTimeout(async () => {
+      try {
+        const locationNameParam = locationName ? `&locationName=${encodeURIComponent(locationName)}` : "";
+        const response = await fetch(
+          `/api/recommendations?lat=${lat}&lon=${lon}&source=${source}&strictHours=${strictHours}&searchDistance=${searchDistance === "auto" ? "auto" : searchDistance}${locationNameParam}`
+        );
+
+        if (!response.ok) {
+          throw new Error(`API error: ${response.statusText}`);
+        }
+
+        const result: RecommendationResponse = await response.json();
+        setData(result);
+
+        // Set selected location display name
+        const displayName = locationName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+        setSelectedLocation(displayName);
+
+        // Determine status based on weather (checked for 12 hours)
+        if (!result.localWeather.isRainingNow && !result.localWeather.willRainSoon) {
+          setStatus("not-raining");
+          setStatusMessage(result.localWeather.summary || "It's dry at your location for the next 12 hours!");
+        } else {
+          setStatus(null); // Show results (it's raining or will rain soon)
+        }
+
+        setIsExiting(false);
+
+        // Fetch POI data asynchronously after initial results are shown
+        if (result.recommendations && result.recommendations.length > 0) {
+          setPoiLoading(true);
+          fetchPOIData(result.recommendations).then((poiData) => {
+            if (poiData) {
+              // Update recommendations with POI data
+              setData((currentData) => {
+                if (!currentData) return currentData;
+                const updatedRecommendations = currentData.recommendations.map((rec) => {
+                  const poiInfo = poiData.find(
+                    (p) => p.lat === rec.place.lat && p.lon === rec.place.lon && p.name === rec.place.name
+                  );
+                  if (poiInfo) {
+                    return {
+                      ...rec,
+                      place: {
+                        ...rec.place,
+                        nearbyPOIs: poiInfo.nearbyPOIs,
+                        poiSummary: poiInfo.poiSummary,
+                      },
+                    };
+                  }
+                  return rec;
+                });
+                return {
+                  ...currentData,
+                  recommendations: updatedRecommendations,
+                };
+              });
+            }
+            setPoiLoading(false);
+          }).catch((error) => {
+            console.error("Error fetching POI data:", error);
+            setPoiLoading(false);
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching recommendations:", error);
+        setStatus("error");
+        setStatusMessage("Failed to fetch recommendations. Please try again.");
+        setData(null);
+        setIsExiting(false);
+        // Reset to empty state on error
+        setSelectedLocation("");
+      }
+    }, 150); // Match exit animation duration
+  };
+
+  const handleEditLocation = () => {
+    setSelectedLocation("");
+    setData(null);
+    setStatus(null);
+    setUserLocation(null);
+    setPoiLoading(false);
+  };
+
+  // Fetch POI data for all recommendations
+  const fetchPOIData = async (recommendations: RecommendationResponse["recommendations"]) => {
     try {
-      const locationNameParam = locationName ? `&locationName=${encodeURIComponent(locationName)}` : "";
-      const response = await fetch(
-        `/api/recommendations?lat=${lat}&lon=${lon}&source=${source}&strictHours=${strictHours}&searchDistance=${searchDistance === "auto" ? "auto" : searchDistance}${locationNameParam}`
-      );
+      const places = recommendations.map((rec) => ({
+        lat: rec.place.lat,
+        lon: rec.place.lon,
+        name: rec.place.name,
+      }));
+
+      const response = await fetch("/api/poi", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ places }),
+      });
 
       if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`);
+        throw new Error(`POI API error: ${response.statusText}`);
       }
 
-      const result: RecommendationResponse = await response.json();
-      setData(result);
-
-      // Determine status based on weather (checked for 12 hours)
-      // If dry for 12 hours, show "not-raining" status but still display recommendations
-      if (!result.localWeather.isRainingNow && !result.localWeather.willRainSoon) {
-        setStatus("not-raining");
-        setStatusMessage(result.localWeather.summary || "It's dry at your location for the next 12 hours!");
-      } else {
-        setStatus(null); // Show results (it's raining or will rain soon)
-      }
+      const result = await response.json();
+      return result.places;
     } catch (error) {
-      console.error("Error fetching recommendations:", error);
-      setStatus("error");
-      setStatusMessage("Failed to fetch recommendations. Please try again.");
-      setData(null);
+      console.error("Error fetching POI data:", error);
+      return null;
     }
   };
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <span className="text-5xl">☀️</span>
-            <h1 className="text-4xl font-bold text-gray-900">Escape the Rain</h1>
+    <div className="min-h-screen bg-background flex flex-col">
+      {/* Conditional Rendering: Empty State or Results */}
+      {!selectedLocation ? (
+        /* Empty State - 4 Components Evenly Distributed */
+        <div className={`min-h-screen flex flex-col ${isExiting ? 'animate-fade-out-up' : ''}`}>
+          {/* Component 1: Title + Subtitle */}
+          <div className="bg-gradient-to-b from-blue-50 to-background px-4 flex items-center justify-center h-full flex-1 pt-[40px] lg:pt-[75px] pr-[28px] pb-[0px] pl-[28px]">
+            <div className="max-w-7xl mx-auto text-center">
+              <h1 className="text-[36px] lg:text-[48px] font-semibold mb-3">
+                Escape the rain
+              </h1>
+              <p className="text-[16px] lg:text-[18px] text-muted-foreground max-w-2xl mx-auto">
+                Too wet go outside? Find the nearest places
+                where it&apos;s dry
+              </p>
+            </div>
           </div>
-          <p className="text-gray-600">
-            Can&apos;t go outside? Find the nearest places where it&apos;s not raining
-          </p>
-        </div>
 
-        {/* Location Picker */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">Choose your location</h2>
-          <LocationPicker
-            onLocationSelect={handleLocationSelect}
-            disabled={status === "loading"}
-          />
-          
-          {/* Search Settings */}
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Rain Forecast Window */}
-              <div>
-                <label htmlFor="strictHours" className="block text-sm font-medium text-gray-700 mb-2">
-                  Rain forecast window for destinations: {strictHours} hour{strictHours !== 1 ? "s" : ""}
-                </label>
-                <div className="flex items-center gap-4">
-                  <input
-                    type="range"
-                    id="strictHours"
-                    min="1"
-                    max="12"
-                    value={strictHours}
-                    onChange={(e) => setStrictHours(parseInt(e.target.value, 10))}
-                    disabled={status === "loading"}
-                    className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
-                  <span className="text-sm text-gray-600 min-w-[80px]">
-                    {strictHours}h ahead
-                  </span>
+          {/* Component 2: Location Selector */}
+          <div className="px-4 lg:px-[28px] flex items-center justify-center h-full flex-1 py-[0px]">
+            <div className="w-full max-w-7xl">
+              <LocationSelector 
+                onLocationSelect={handleLocationSelect}
+                selectedLocation={selectedLocation}
+                disabled={status === "loading"}
+              />
+              
+              {/* Settings - Hidden by default, can be shown if needed */}
+              {showSettings && (
+                <div className="mt-4 pt-4 border-t border-border">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Rain Forecast Window */}
+                    <div>
+                      <label htmlFor="strictHours" className="block text-sm font-medium text-muted-foreground mb-2">
+                        Rain forecast window for destinations: {strictHours} hour{strictHours !== 1 ? "s" : ""}
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="range"
+                          id="strictHours"
+                          min="1"
+                          max="12"
+                          value={strictHours}
+                          onChange={(e) => setStrictHours(parseInt(e.target.value, 10))}
+                          disabled={status === "loading"}
+                          className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                        />
+                        <span className="text-sm text-muted-foreground min-w-[80px]">
+                          {strictHours}h ahead
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Only show destinations that won&apos;t rain in the next {strictHours} hour{strictHours !== 1 ? "s" : ""} (your location is checked for 12 hours)
+                      </p>
+                    </div>
+
+                    {/* Search Distance */}
+                    <div>
+                      <label htmlFor="searchDistance" className="block text-sm font-medium text-muted-foreground mb-2">
+                        Search distance
+                      </label>
+                      <select
+                        id="searchDistance"
+                        value={searchDistance}
+                        onChange={(e) => setSearchDistance(e.target.value)}
+                        disabled={status === "loading"}
+                        className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                      >
+                        <option value="auto">Auto (anywhere)</option>
+                        <option value="10">0-10 km</option>
+                        <option value="25">11-25 km</option>
+                        <option value="50">26-50 km</option>
+                        <option value="100">50-100 km</option>
+                      </select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {searchDistance === "auto" 
+                          ? "Searches 10km first, then 25km, then 50km, then 100km if needed"
+                          : `Maximum distance to search for dry places: ${searchDistance}km`}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Only show destinations that won&apos;t rain in the next {strictHours} hour{strictHours !== 1 ? "s" : ""} (your location is checked for 12 hours)
-                </p>
-              </div>
+              )}
 
-              {/* Search Distance */}
-              <div>
-                <label htmlFor="searchDistance" className="block text-sm font-medium text-gray-700 mb-2">
-                  Search distance
-                </label>
-                <select
-                  id="searchDistance"
-                  value={searchDistance}
-                  onChange={(e) => setSearchDistance(e.target.value)}
-                  disabled={status === "loading"}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                >
-                  <option value="auto">Auto (anywhere)</option>
-                  <option value="10">0-10 km</option>
-                  <option value="25">11-25 km</option>
-                  <option value="50">26-50 km</option>
-                  <option value="100">50-100 km</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1">
-                  {searchDistance === "auto" 
-                    ? "Searches 10km first, then 25km, then 50km, then 100km if needed"
-                    : `Maximum distance to search for dry places: ${searchDistance}km`}
-                </p>
-              </div>
+              {/* Loading State */}
+              {status === "loading" && (
+                <div className="mt-4 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                  <p className="text-muted-foreground">{statusMessage || "Checking weather and finding dry places..."}</p>
+                </div>
+              )}
+
+              {/* Error State */}
+              {status === "error" && (
+                <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                  <p className="text-red-800 font-medium">Error</p>
+                  <p className="text-red-600 mt-1">{statusMessage || "Something went wrong. Please try again."}</p>
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Component 3: Animation */}
+          <div className="px-4 flex items-center justify-center h-full flex-1 mt-[0px] mr-[0px] mb-[20px] lg:mb-[40px] ml-[0px]">
+            <EmptyState />
+          </div>
+
+          {/* Component 4: Footer - Pinned to Bottom */}
+          <footer className="px-4 py-4 border-t border-border text-center text-xs text-muted-foreground bg-background">
+            <p className="text-[10px]">
+              Weather data from{" "}
+              <a 
+                href="https://open-meteo.com" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                Open-Meteo
+              </a>
+              {" • "}
+              Places from{" "}
+              <a 
+                href="https://opentripmap.io" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                OpenTripMap
+              </a>
+              {" • "}
+              Maps by{" "}
+              <a 
+                href="https://www.openstreetmap.org" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                OpenStreetMap
+              </a>
+            </p>
+          </footer>
         </div>
-
-        {/* Status Card */}
-        <div className="mb-6">
-          <StatusCard
-            status={status}
-            message={statusMessage}
-            localWeatherSummary={data?.localWeather.summary}
-          />
-        </div>
-
-        {/* Results - Always show recommendations if available, even when location is dry */}
-        {data && data.recommendations.length > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Destinations List */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h2 className="text-lg font-semibold mb-4">
-                {status === "not-raining" 
-                  ? "Nearby places that are also dry" 
-                  : "Dry destinations nearby"}
-              </h2>
-              <DestinationsList recommendations={data.recommendations} />
-            </div>
-
-            {/* Map */}
-            <div className="bg-white rounded-lg shadow-sm p-6">
-              <h2 className="text-lg font-semibold mb-4">Map</h2>
-              <MapView
-                userLocation={userLocation}
-                recommendations={data.recommendations}
+      ) : (
+        /* Results State */
+        <div className="w-full flex flex-col min-h-screen">
+          {/* Compact Header */}
+          <div className="bg-gradient-to-b from-blue-50 to-background py-4 px-4 border-b border-border animate-slide-down">
+            <div className="max-w-7xl mx-auto">
+              {/* Collapsed Location Selector */}
+              <LocationSelector 
+                onLocationSelect={handleLocationSelect}
+                selectedLocation={selectedLocation}
+                collapsed={true}
               />
             </div>
           </div>
-        )}
 
-        {/* Show message if no recommendations found */}
-        {data && data.recommendations.length === 0 && (
-          <div className="bg-white rounded-lg shadow-sm p-6 text-center">
-            <p className="text-gray-600">
-              {status === "not-raining" 
-                ? "No other dry places found nearby. Your location is the best spot!" 
-                : "No dry places found nearby. Try expanding your search distance or check back later!"}
-            </p>
+          {/* Main Content - grows to fill available space */}
+          <div className="flex-1">
+            <div className="max-w-7xl mx-auto px-4 w-full py-6 animate-slide-up" style={{ animationDelay: '0.15s' }}>
+              {/* Status Message (if not raining) */}
+              {status === "not-raining" && (
+                <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-6 text-center animate-fade-in-up" style={{ animationDelay: '0.25s' }}>
+                  <div className="text-4xl mb-3">☀️</div>
+                  <p className="text-green-800 font-medium text-lg mb-2">Good news!</p>
+                  <p className="text-green-700">
+                    {statusMessage || "It's not raining at your location for the next 12 hours – enjoy it!"}
+                  </p>
+                </div>
+              )}
+
+              {/* Desktop: Two Column Layout | Mobile: Stacked */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Left Column: Destinations List */}
+                <div className="order-2 lg:order-1 flex flex-col">
+                  <h2 className="mb-5 text-2xl">Dry destinations nearby</h2>
+                  {data && data.recommendations.length > 0 ? (
+                    <div className="flex flex-col gap-4 lg:h-[calc(100vh-180px)] lg:overflow-y-auto">
+                      {data.recommendations.map((destination, index) => (
+                        <div 
+                          key={destination.place.id}
+                          className="animate-fade-in-up flex-1"
+                          style={{ animationDelay: `${0.4 + index * 0.1}s` }}
+                        >
+                          <DestinationCard 
+                            destination={destination}
+                            index={index}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : data && data.recommendations.length === 0 ? (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+                      <p className="text-yellow-800">
+                        {data.error 
+                          ? data.error 
+                          : status === "not-raining" 
+                            ? "No other dry places found nearby. Your location is the best spot!" 
+                            : "No dry places found nearby. Try expanding your search distance or check back later!"}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+
+              {/* Right Column: Map */}
+              <div className="order-1 lg:order-2">
+                <h2 className="mb-5 text-2xl">Map</h2>
+                <div className="h-[400px] lg:h-[calc(100vh-180px)] lg:sticky lg:top-8 animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
+                  {userLocation && data && (
+                    <MapView 
+                      userLocation={userLocation}
+                      recommendations={data.recommendations}
+                    />
+                  )}
+                </div>
+              </div>
+              </div>
+            </div>
           </div>
-        )}
 
-        {/* Footer */}
-        <div className="mt-12 text-center text-sm text-gray-500">
-          <p>
-            Weather data from{" "}
-            <a href="https://open-meteo.com" className="text-blue-600 hover:underline">
-              Open-Meteo
-            </a>
-            {" • "}
-            Places from{" "}
-            <a href="https://opentripmap.io" className="text-blue-600 hover:underline">
-              OpenTripMap
-            </a>
-            {" • "}
-            Maps by{" "}
-            <a href="https://www.openstreetmap.org" className="text-blue-600 hover:underline">
-              OpenStreetMap
-            </a>
-          </p>
+          {/* Footer - Stuck to bottom */}
+          <div
+            className="animate-fade-in bg-background pb-6"
+            style={{ animationDelay: "1s" }}
+          >
+            <Footer />
+          </div>
         </div>
-      </div>
-    </main>
+      )}
+    </div>
   );
 }
-

@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import Map, { Marker, Popup } from "react-map-gl/mapbox";
 import type { MapRef } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { MapPin } from "lucide-react";
 import type { Recommendation } from "@/lib/types";
 
 type MapViewProps = {
@@ -106,47 +107,60 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
   }
 
   return (
-    <div className="w-full h-96 rounded-lg overflow-hidden border border-gray-200">
-      <Map
-        ref={mapRef}
-        mapboxAccessToken={apiKey}
-        initialViewState={defaultUKView}
-        style={{ width: "100%", height: "100%" }}
-        mapStyle="mapbox://styles/mapbox/streets-v12"
-        onLoad={() => setMapLoaded(true)}
-      >
-        {userLocation && (
-          <Marker
-            longitude={userLocation.lon}
-            latitude={userLocation.lat}
-            anchor="center"
-            onClick={() => setSelectedPlace("user")}
-          >
-            <div className="cursor-pointer">
-              <div className="w-6 h-6 bg-blue-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
-                <span className="text-white text-xs font-bold">You</span>
-              </div>
-            </div>
-          </Marker>
-        )}
-        {recommendations.map((rec, index) => {
-          const letter = String.fromCharCode(65 + index); // A, B, C, D, E
-          return (
+    <div className="w-full h-full bg-gradient-to-br from-blue-50 to-green-50 rounded-2xl lg:rounded-3xl border border-border relative overflow-hidden">
+      {/* Grid pattern background overlay */}
+      <div className="absolute inset-0 opacity-20 z-0 pointer-events-none">
+        <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="gray" strokeWidth="0.5"/>
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#grid)" />
+        </svg>
+      </div>
+
+      <div className="relative w-full h-full z-10">
+        <Map
+          ref={mapRef}
+          mapboxAccessToken={apiKey}
+          initialViewState={defaultUKView}
+          style={{ width: "100%", height: "100%" }}
+          mapStyle="mapbox://styles/mapbox/streets-v12"
+          onLoad={() => setMapLoaded(true)}
+        >
+          {userLocation && (
             <Marker
-              key={rec.place.id}
-              longitude={rec.place.lon}
-              latitude={rec.place.lat}
+              longitude={userLocation.lon}
+              latitude={userLocation.lat}
               anchor="center"
-              onClick={() => setSelectedPlace(rec.place.id)}
+              onClick={() => setSelectedPlace("user")}
             >
-              <div className="cursor-pointer">
-                <div className="w-8 h-8 bg-red-600 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
-                  <span className="text-white text-sm font-bold">{letter}</span>
-                </div>
+              <div className="relative cursor-pointer z-20">
+                <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg animate-pulse"></div>
+                <div className="absolute -inset-2 bg-blue-500/30 rounded-full animate-ping"></div>
               </div>
             </Marker>
-          );
-        })}
+          )}
+          {recommendations.map((rec, index) => {
+            const number = index + 1; // 1, 2, 3, 4, 5 (1 = closest)
+            return (
+              <Marker
+                key={rec.place.id}
+                longitude={rec.place.lon}
+                latitude={rec.place.lat}
+                anchor="bottom"
+                onClick={() => setSelectedPlace(rec.place.id)}
+              >
+                <div className="relative cursor-pointer z-10">
+                  <MapPin className="w-10 h-10 text-red-500 fill-red-500 drop-shadow-lg" />
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span className="text-white text-xs font-bold -mt-1.5">{number}</span>
+                  </div>
+                </div>
+              </Marker>
+            );
+          })}
         {selectedPlace === "user" && userLocation && (
           <Popup
             longitude={userLocation.lon}
@@ -161,8 +175,20 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
             </div>
           </Popup>
         )}
-        {recommendations.map((rec) => (
-          selectedPlace === rec.place.id && (
+        {recommendations.map((rec) => {
+          // Get POIs from nearbyPOIs array, filtering out "attractions"
+          const getPOIs = (): string[] => {
+            if (rec.place.nearbyPOIs && rec.place.nearbyPOIs.length > 0) {
+              return rec.place.nearbyPOIs
+                .filter(poi => poi.toLowerCase() !== "attractions")
+                .slice(0, 5);
+            }
+            return [];
+          };
+          
+          const pois = getPOIs();
+          
+          return selectedPlace === rec.place.id && (
             <Popup
               key={rec.place.id}
               longitude={rec.place.lon}
@@ -172,17 +198,25 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
               closeButton={true}
               closeOnClick={false}
             >
-              <div className="p-2">
-                <div className="font-semibold">{rec.place.name}</div>
-                <div className="text-sm text-gray-600 mt-1">{rec.rainSummary}</div>
-                {rec.place.poiSummary && (
-                  <div className="text-sm text-blue-700 mt-1">✨ {rec.place.poiSummary}</div>
+              <div className="p-4 w-fit min-w-[200px]">
+                <div className="font-medium text-xl text-foreground mb-2 pr-8">{rec.place.name}</div>
+                <div className="text-base text-muted-foreground mb-2">{rec.rainSummary}</div>
+                {pois.length > 0 && (
+                  <div className="text-sm text-muted-foreground">
+                    {pois.join(", ")}
+                  </div>
                 )}
               </div>
             </Popup>
-          )
-        ))}
-      </Map>
+          );
+        })}
+        </Map>
+      </div>
+
+      {/* Attribution */}
+      <div className="absolute bottom-2 right-2 text-[10px] text-muted-foreground bg-white/80 px-2 py-1 rounded z-20">
+        Maps © OpenStreetMap
+      </div>
     </div>
   );
 }

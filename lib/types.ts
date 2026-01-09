@@ -36,6 +36,7 @@ export type RecommendationResponse = {
   userLocation: UserLocation;
   localWeather: WeatherStatus;
   recommendations: Recommendation[];
+  error?: string; // Optional error message (e.g., "No dry places within Xkm!")
 };
 
 export type GeocodeResult = {

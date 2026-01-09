@@ -9,6 +9,7 @@ export function formatDistance(km: number): string {
   if (km < 1) {
     return `${Math.round(km * 1000)}m`;
   }
+  // Return format like "38.2km" (no space, one decimal place)
   return `${km.toFixed(1)}km`;
 }
 
