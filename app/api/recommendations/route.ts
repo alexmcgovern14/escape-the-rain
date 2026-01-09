@@ -403,8 +403,11 @@ export async function GET(request: NextRequest) {
     
     // If we found fewer than 5 dry places and we're in auto mode, try extending search
     if (enrichedPlaces.length < 5 && useAutoSearch) {
+      console.log(`[EXTENDED SEARCH] Triggered: Found ${enrichedPlaces.length} dry places, current searchRadius=${searchRadius}, useAutoSearch=${useAutoSearch}`);
+      // Determine which tier we're at and extend from there
       // If we only searched 10km, extend to 25km
-      if (searchRadius === 10) {
+      if (searchRadius <= 10) {
+        console.log(`[EXTENDED SEARCH] Entering searchRadius <= 10 block`);
         const extendedRadius = 25;
         console.log(`Only found ${enrichedPlaces.length} dry places in 1-10km, extending search to 10-${extendedRadius}km for more options`);
         const extendedResult = await fetchNearbyPlacesWithSources(
@@ -799,8 +802,9 @@ export async function GET(request: NextRequest) {
       }
       // If we searched 25km, extend to 50km
       else if (searchRadius === 25) {
+        console.log(`[EXTENDED SEARCH] Entering searchRadius === 25 block`);
         const extendedRadius = 50;
-        console.log(`Only found ${enrichedPlaces.length} dry places in 1-25km, extending search to 25-${extendedRadius}km for more options`);
+        console.log(`[EXTENDED SEARCH] Only found ${enrichedPlaces.length} dry places in 1-25km, extending search to 25-${extendedRadius}km for more options`);
         const extendedResult = await fetchNearbyPlacesWithSources(
           latitude,
           longitude,
@@ -1053,8 +1057,11 @@ export async function GET(request: NextRequest) {
       }
       // If we searched 50km, extend to 100km
       else if (searchRadius === 50) {
+        console.log(`[EXTENDED SEARCH] Entering searchRadius === 50 block`);
         const extendedRadius = 100;
-        console.log(`Only found ${enrichedPlaces.length} dry places in 1-50km, extending search to 50-${extendedRadius}km for more options`);
+        const minDistance = 50;
+        const maxDistance = 100;
+        console.log(`[EXTENDED SEARCH] Only found ${enrichedPlaces.length} dry places in 1-${searchRadius}km, extending search to ${minDistance}-${maxDistance}km for more options`);
         const extendedResult = await fetchNearbyPlacesWithSources(
           latitude,
           longitude,
@@ -1062,11 +1069,13 @@ export async function GET(request: NextRequest) {
           apiKey
         );
         
-        // Filter to only places between 50-100km
+        // Filter to only places in the extended range
         const extendedPlaces = extendedResult.places.filter(place => {
           const distance = haversineDistance(latitude, longitude, place.lat, place.lon);
-          return distance > 50 && distance <= 100;
+          return distance > minDistance && distance <= maxDistance;
         });
+        
+        console.log(`[EXTENDED SEARCH] Found ${extendedPlaces.length} places in ${minDistance}-${maxDistance}km range`);
         
         if (extendedPlaces.length > 0) {
           // Recalculate distances and filter
@@ -1096,6 +1105,11 @@ export async function GET(request: NextRequest) {
               }
             }
             
+            // Don't duplicate existing candidates
+            if (isDuplicatePlace(place, topCandidates)) {
+              return false;
+            }
+            
             return true;
           })
           .sort((a, b) => a.distanceKm - b.distanceKm)
@@ -1103,29 +1117,40 @@ export async function GET(request: NextRequest) {
         
         // Check weather for additional places (only ones we haven't checked yet)
         const newPlaces = extendedFiltered.filter(
-          (place) => !topCandidates.some((c) => c.id === place.id)
+          (place) => !topCandidates.some((c) => c.id === place.id) && !weatherResults.has(`${place.lat},${place.lon}`)
         );
         
+        console.log(`[EXTENDED SEARCH] Found ${newPlaces.length} new places to check weather for (out of ${extendedFiltered.length} filtered places)`);
+        
         if (newPlaces.length > 0) {
-          console.log(`Checking weather for ${newPlaces.length} additional places from extended search`);
-          for (const place of newPlaces.slice(0, 30)) {
+          console.log(`[EXTENDED SEARCH] Checking weather for ${Math.min(newPlaces.length, 50)} additional places from ${minDistance}-${maxDistance}km range`);
+          for (const place of newPlaces.slice(0, 50)) { // Increased from 30 to 50
             try {
+              console.log(`[EXTENDED SEARCH] Checking weather for ${place.name} at ${place.lat},${place.lon}`);
               const result = await checkWeatherAtLocation(place.lat, place.lon, strictHours);
               weatherResults.set(`${place.lat},${place.lon}`, result);
+              console.log(`[EXTENDED SEARCH] ${place.name}: ${result.summary} (dry: ${isDryToday(result, true)})`);
               await new Promise(resolve => setTimeout(resolve, 100));
             } catch (error) {
-              console.error(`Failed to check weather for ${place.lat},${place.lon}:`, error);
+              console.error(`[EXTENDED SEARCH] Failed to check weather for ${place.name} (${place.lat},${place.lon}):`, error);
             }
           }
           
-          // Re-filter with all places
-          const allCandidates = [...topCandidates, ...newPlaces];
+          // Re-filter with ALL places (original + extended), including ones we already checked
+          const allCandidates = [...topCandidates, ...extendedFiltered];
+          console.log(`[EXTENDED SEARCH] Re-filtering ${allCandidates.length} total places (${topCandidates.length} original + ${extendedFiltered.length} extended)`);
           const allDryPlaces = allCandidates
             .map((place) => {
               const weatherKey = `${place.lat},${place.lon}`;
               const weather = weatherResults.get(weatherKey);
-              if (!weather) return null;
+              if (!weather) {
+                console.log(`[EXTENDED SEARCH] No weather data for ${place.name} (${weatherKey})`);
+                return null;
+              }
               const dry = isDryToday(weather, true);
+              if (dry) {
+                console.log(`[EXTENDED SEARCH] ${place.name}: DRY - ${weather.summary}`);
+              }
               return dry ? {
                 place,
                 isDryToday: dry,
@@ -1133,8 +1158,14 @@ export async function GET(request: NextRequest) {
               } : null;
             })
             .filter((item): item is NonNullable<typeof item> => item !== null)
+            // Deduplicate by name and distance before sorting
+            .filter((item, index, array) => {
+              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place]));
+            })
             .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
             .slice(0, 5);
+          
+          console.log(`[EXTENDED SEARCH] Found ${allDryPlaces.length} total dry places after ${minDistance}-${maxDistance}km search`);
           
           // Enrich extended places with POI data
           const enrichedExtendedPlaces = await Promise.all(
@@ -1175,8 +1206,14 @@ export async function GET(request: NextRequest) {
           
           response.recommendations = enrichedExtendedPlaces;
           return NextResponse.json(response);
+        } else {
+          console.log(`[EXTENDED SEARCH] No places found in ${minDistance}-${maxDistance}km range, cannot extend search`);
         }
+      } else {
+        console.log(`[EXTENDED SEARCH] searchRadius=${searchRadius} does not match any extended search condition (10, 25, or 50)`);
       }
+    } else {
+      console.log(`[EXTENDED SEARCH] Not triggered: enrichedPlaces.length=${enrichedPlaces.length}, useAutoSearch=${useAutoSearch}`);
     }
     
     // Debug: Log all weather results
