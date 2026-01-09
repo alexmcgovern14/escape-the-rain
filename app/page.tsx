@@ -77,7 +77,8 @@ export default function Home() {
                 if (!currentData) return currentData;
                 const updatedRecommendations = currentData.recommendations.map((rec) => {
                   const poiInfo = poiData.find(
-                    (p) => p.lat === rec.place.lat && p.lon === rec.place.lon && p.name === rec.place.name
+                    (p: { lat: number; lon: number; name: string; nearbyPOIs: string[]; poiSummary: string }) => 
+                      p.lat === rec.place.lat && p.lon === rec.place.lon && p.name === rec.place.name
                   );
                   if (poiInfo) {
                     return {
