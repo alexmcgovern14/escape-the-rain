@@ -2,8 +2,8 @@ import React from 'react';
 
 export default function Footer() {
   return (
-    <footer className="mt-12 pt-6 border-t border-border text-center text-sm text-muted-foreground">
-      <p>
+    <footer className="px-4 py-4 border-t border-border text-center text-xs text-muted-foreground bg-background">
+      <p className="text-[10px]">
         Weather data from{' '}
         <a 
           href="https://open-meteo.com" 

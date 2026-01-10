@@ -90,8 +90,7 @@ export default function DestinationCard({ destination, index }: DestinationCardP
       const filteredPOIs = currentPOIs.filter(
         poi => poi && !(POI_FILTERS.EXCLUDED_KEYWORDS as readonly string[]).includes(poi.toLowerCase())
       );
-      const limited = filteredPOIs.slice(0, SEARCH_CONFIG.POI_LIMIT);
-      result.push(...limited);
+      result.push(...filteredPOIs);
     } 
     // Priority 2: Extract from poiSummary string
     else if (destination.place.poiSummary) {
@@ -108,8 +107,7 @@ export default function DestinationCard({ destination, index }: DestinationCardP
           word.length >= POI_FILTERS.MIN_KEYWORD_LENGTH && 
           word.length <= POI_FILTERS.MAX_KEYWORD_LENGTH
         )
-        .filter(word => !(POI_FILTERS.EXCLUDED_KEYWORDS as readonly string[]).includes(word.toLowerCase()))
-        .slice(0, SEARCH_CONFIG.POI_LIMIT);
+        .filter(word => !(POI_FILTERS.EXCLUDED_KEYWORDS as readonly string[]).includes(word.toLowerCase()));
       result.push(...keywords);
     }
     // Priority 3: Filter kinds to only include POI-related categories, not administrative ones
@@ -136,7 +134,7 @@ export default function DestinationCard({ destination, index }: DestinationCardP
         const filteredKinds = formattedKinds.filter(
           kind => !(POI_FILTERS.EXCLUDED_KEYWORDS as readonly string[]).includes(kind.toLowerCase())
         );
-        result.push(...filteredKinds.slice(0, SEARCH_CONFIG.POI_LIMIT));
+        result.push(...filteredKinds);
       }
     }
 
@@ -150,17 +148,17 @@ export default function DestinationCard({ destination, index }: DestinationCardP
       {/* Section 1: Name and Weather Icon with Maps Button */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-[10px] min-w-0 flex-1">
-          <h3 className="font-medium text-lg text-[20px] lg:text-[22px] truncate min-w-0">
+          <h3 className="font-medium text-[20px] lg:text-[18px] truncate min-w-0">
             <span className="font-light text-[rgb(59,59,59)]">{index + 1}. </span>{destination.place.name}
           </h3>
-          <div className="shrink-0 text-[20px] lg:text-[22px] self-center">
+          <div className="shrink-0 text-[20px] lg:text-[18px] self-center">
             {getWeatherIcon()}
           </div>
         </div>
         <Button 
           size="sm" 
           onClick={handleOpenInMaps}
-          className="shrink-0 bg-[rgb(255,240,146)] hover:bg-[#f4d03f] text-[rgb(0,0,0)]"
+          className="shrink-0 bg-[rgb(255,240,146)] hover:bg-[#f4d03f] text-[rgb(0,0,0)] lg:text-[11px]"
         >
           Open map
         </Button>
@@ -170,17 +168,17 @@ export default function DestinationCard({ destination, index }: DestinationCardP
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1.5 text-muted-foreground">
           <MapPin className="size-3.5" />
-          <span className="text-sm text-[14px] lg:text-[16px]">{formatDistance(destination.place.distanceKm)} away</span>
+          <span className="text-[14px] lg:text-[13px]">{formatDistance(destination.place.distanceKm)} away</span>
         </div>
-        <div className="flex items-center gap-2 text-sm">
-          <span className="font-medium text-[14px] lg:text-[16px]">{weatherStatus}</span>
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-[14px] lg:text-[13px]">{weatherStatus}</span>
         </div>
       </div>
       
       {/* Section 3: Things to Do Pills - Horizontal scrollable with drag support */}
       <div 
         ref={scrollContainerRef}
-        className="flex gap-2 overflow-x-auto scrollbar-hide cursor-grab active:cursor-grabbing select-none mt-1"
+        className="flex flex-nowrap gap-2 overflow-x-auto scrollbar-hide cursor-grab active:cursor-grabbing select-none mt-1"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUpOrLeave}
@@ -191,7 +189,7 @@ export default function DestinationCard({ destination, index }: DestinationCardP
           thingsToDo.map((thing, pillIndex) => (
             <span 
               key={`${destination.place.id}-poi-${thing}-${destination.place.nearbyPOIs?.length || 0}`}
-              className="text-xs px-2.5 py-1 bg-secondary text-secondary-foreground rounded-full text-[11px] lg:text-[13px] whitespace-nowrap flex-shrink-0"
+              className="text-xs px-2.5 py-1 bg-secondary text-secondary-foreground rounded-full text-[11px] lg:text-[11px] whitespace-nowrap flex-shrink-0"
             >
               {thing}
             </span>

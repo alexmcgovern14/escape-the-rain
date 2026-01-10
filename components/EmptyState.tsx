@@ -70,10 +70,13 @@ export default function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center px-4 text-center">
       {/* Animated weather icons */}
-      <div className="relative w-64 h-64 lg:w-80 lg:h-80">
+      <div className="relative w-48 h-48 sm:w-64 sm:h-64 lg:w-80 lg:h-80">
         {/* Rain cloud - top left */}
         <div className="absolute top-0 left-0 opacity-40">
-          <div className="block lg:hidden">
+          <div className="block sm:hidden">
+            <AnimatedRainCloud className="text-blue-400" size={RAIN_CLOUD.SMALL.mobile * 0.7} />
+          </div>
+          <div className="hidden sm:block lg:hidden">
             <AnimatedRainCloud className="text-blue-400" size={RAIN_CLOUD.SMALL.mobile} />
           </div>
           <div className="hidden lg:block">
@@ -84,7 +87,7 @@ export default function EmptyState() {
         {/* Main sun icon */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
           <Sun 
-            className="size-32 lg:size-40 text-yellow-500 animate-spin opacity-100" 
+            className="size-24 sm:size-32 lg:size-40 text-yellow-500 animate-spin opacity-100" 
             style={{ 
               animationDuration: `${ANIMATION_DURATIONS.SUN_SPIN}ms`,
             }}
@@ -93,7 +96,10 @@ export default function EmptyState() {
         
         {/* Rain clouds - top right */}
         <div className="absolute top-8 opacity-30" style={{ right: '-25px' }}>
-          <div className="block lg:hidden">
+          <div className="block sm:hidden">
+            <AnimatedRainCloud className="text-blue-400" size={RAIN_CLOUD.LARGE.mobile * 0.7} />
+          </div>
+          <div className="hidden sm:block lg:hidden">
             <AnimatedRainCloud className="text-blue-400" size={RAIN_CLOUD.LARGE.mobile} />
           </div>
           <div className="hidden lg:block">
@@ -103,7 +109,7 @@ export default function EmptyState() {
         
         {/* Bottom cloud - pulsing */}
         <div className="absolute bottom-4 left-4 animate-pulse opacity-20" style={{ animationDelay: '2s' }}>
-          <Cloud className="size-20 lg:size-24 text-gray-400" />
+          <Cloud className="size-16 sm:size-20 lg:size-24 text-gray-400" />
         </div>
       </div>
     </div>

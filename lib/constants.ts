@@ -145,6 +145,33 @@ export const POI_FILTERS = {
 } as const;
 
 /**
+ * POI baseline frequencies (percentage of locations that have each POI type)
+ * Calculated from sampling 99 UK locations of various sizes
+ * Used to prioritize POI types that "overindex" (are more notable than average)
+ * 
+ * Extracted from baseline calculation script output
+ * Format: "poi_type": frequency (0.0 to 1.0, where 0.2 means 20% of locations have it)
+ */
+export const POI_BASELINES: Record<string, number> = {
+  shops: 0.960,
+  restaurants: 0.960,
+  pubs: 0.949,
+  shopping: 0.949,
+  museums: 0.939,
+  cafes: 0.909,
+  sports: 0.889,
+  attractions: 0.808,
+  sights: 0.586,
+  parks: 0.556,
+  cinema: 0.485,
+  'nature reserves': 0.333,
+  stadiums: 0.121,
+  forests: 0.121,
+  playgrounds: 0.051,
+  markets: 0.010,
+} as const;
+
+/**
  * API endpoints
  */
 export const API_ENDPOINTS = {

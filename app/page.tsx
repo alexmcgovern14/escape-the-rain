@@ -207,10 +207,10 @@ export default function Home() {
           {/* Component 1: Title + Subtitle */}
           <div className="bg-gradient-to-b from-blue-50 to-background px-4 flex items-center justify-center h-full flex-1 pt-[40px] lg:pt-[75px] pr-[28px] pb-[0px] pl-[28px]">
             <div className="max-w-7xl mx-auto text-center">
-              <h1 className="text-[36px] lg:text-[48px] font-semibold mb-3">
+              <h1 className="text-[34px] lg:text-[48px] font-semibold mb-3">
                 Escape the rain
               </h1>
-              <p className="text-[16px] lg:text-[18px] text-muted-foreground max-w-2xl mx-auto">
+              <p className="text-[14px] lg:text-[16px] text-muted-foreground max-w-2xl mx-auto">
                 Too wet go outside? Find the nearest places
                 where it&apos;s dry
               </p>
@@ -218,7 +218,7 @@ export default function Home() {
           </div>
 
           {/* Component 2: Location Selector */}
-          <div className="px-4 lg:px-[28px] flex items-center justify-center h-full flex-1 py-[0px]">
+          <div className="px-8 lg:px-[28px] flex items-center justify-center h-full flex-1 py-[0px]">
             <div className="w-full max-w-7xl">
               <LocationSelector 
                 onLocationSelect={handleLocationSelect}
@@ -364,7 +364,7 @@ export default function Home() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Left Column: Destinations List */}
                 <div className="order-2 lg:order-1 flex flex-col lg:overflow-hidden">
-                  <h2 className="mb-5 text-2xl">Dry destinations nearby</h2>
+                  <h2 className="mb-5 text-2xl lg:text-[20px]">Dry destinations nearby</h2>
                   {data && data.recommendations.length > 0 ? (
                     <div className="flex flex-col gap-4 flex-1 lg:overflow-hidden">
                       {data.recommendations.map((destination, index) => {
@@ -401,7 +401,7 @@ export default function Home() {
 
               {/* Right Column: Map */}
               <div className="order-1 lg:order-2">
-                <h2 className="mb-5 text-2xl">Map</h2>
+                <h2 className="mb-5 text-2xl lg:text-[20px]">Map</h2>
                 <div className="h-[400px] lg:h-[calc(100vh-180px)] lg:sticky lg:top-8 animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
                   {userLocation && data && (
                     <MapView 

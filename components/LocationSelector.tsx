@@ -259,7 +259,7 @@ export default function LocationSelector({
           onClick={handleGeolocationSelect}
           size="lg"
           disabled={disabled || isGeolocating}
-          className="text-base px-8 h-12 lg:h-14 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[16px] lg:text-[18px]"
+          className="text-base px-8 h-12 lg:h-14 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[14px] lg:text-[16px]"
         >
           <MapPin className="size-5 lg:size-6" />
           {isGeolocating ? "Getting location..." : "Use my location"}
@@ -290,7 +290,7 @@ export default function LocationSelector({
             }}
             onKeyDown={handleKeyPress}
             disabled={disabled || isSearching}
-            className="pl-10 bg-input-background border-border h-10 lg:h-12 text-sm lg:text-base"
+            className="pl-10 bg-input-background border-border h-10 lg:h-12 text-base lg:text-base"
           />
           {isSearching && (
             <div className="absolute right-3 top-1/2 -translate-y-1/2">

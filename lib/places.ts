@@ -5,6 +5,7 @@
 
 import type { Place } from "./types";
 import { haversineDistance } from "./geo";
+import { POI_BASELINES } from "./constants";
 
 const OPENTRIPMAP_BASE_URL = "https://api.opentripmap.com/0.1/en/places";
 
@@ -181,8 +182,8 @@ export async function enrichPlaceWithPOIs(
     const features = data.features || [];
     console.log(`[POI] Found ${features.length} POI features for ${placeName}`);
 
-    // Collect unique POI types
-    const poiTypes = new Set<string>();
+    // Collect POI types with counts (volume/strength)
+    const poiTypeCounts = new Map<string, number>();
     for (const feature of features) {
       const properties = feature.properties || {};
       
@@ -219,24 +220,62 @@ export async function enrichPlaceWithPOIs(
         });
       }
       
+      // Track which POI types this feature contributes to (to avoid double-counting)
+      const featurePoiTypes = new Set<string>();
+      
       for (const category of categories) {
+        let mappedType: string | null = null;
+        
         // Check exact match first
         if (categoryMap[category]) {
-          poiTypes.add(categoryMap[category]);
+          mappedType = categoryMap[category];
         } else {
           // Check if category starts with any of our category groups
           for (const [key, value] of Object.entries(categoryMap)) {
             if (category.startsWith(key.split('.')[0] + '.')) {
               // Use the mapped value if it's a subcategory we recognize
-              poiTypes.add(value);
+              mappedType = value;
               break;
             }
           }
         }
+        
+        // Only count each POI type once per feature (a feature can have multiple categories)
+        if (mappedType && !featurePoiTypes.has(mappedType)) {
+          featurePoiTypes.add(mappedType);
+          poiTypeCounts.set(mappedType, (poiTypeCounts.get(mappedType) || 0) + 1);
+        }
       }
     }
 
-    const nearbyPOIs = Array.from(poiTypes).sort();
+    // Prioritize POI types that "overindex" (are more notable than baseline average)
+    // Calculate overindexing score for each POI type
+    // Score = (has POI ? 1 : 0) / baseline_frequency
+    // Higher score = more notable/rare POI type
+    const poiScores = Array.from(poiTypeCounts.entries()).map(([type, count]) => {
+      const baseline = POI_BASELINES[type] || 0.5; // Default to 0.5 if unknown
+      // If baseline is 0, avoid division by zero (use count as score)
+      const overindexScore = baseline > 0 ? (1 / baseline) : count;
+      return { type, count, baseline, overindexScore };
+    });
+
+    // Sort by overindexing score (descending) - prioritize rare/notable POI types
+    // Then by count (descending) - if same rarity, prefer more abundant
+    // Then alphabetically for final tie-breaker
+    const nearbyPOIs = poiScores
+      .sort((a, b) => {
+        // First sort by overindexing score (descending)
+        if (Math.abs(b.overindexScore - a.overindexScore) > 0.01) {
+          return b.overindexScore - a.overindexScore;
+        }
+        // Then by count (descending)
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        // Finally alphabetically
+        return a.type.localeCompare(b.type);
+      })
+      .map(({ type }) => type);
     console.log(`[POI] Mapped POI types for ${placeName}:`, nearbyPOIs);
     
     // Generate a user-friendly summary
