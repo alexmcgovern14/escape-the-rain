@@ -7,6 +7,7 @@ import type { Place } from "./types";
 import { haversineDistance } from "./geo";
 import { POI_BASELINES } from "./constants";
 import { poiLogger, apiLogger } from "./logger";
+import { env } from "./env";
 
 const OPENTRIPMAP_BASE_URL = "https://api.opentripmap.com/0.1/en/places";
 
@@ -338,7 +339,7 @@ export async function fetchNearbyPlacesWithSources(
   let primarySource: "geoapify" | "nominatim" | "opentripmap" | "fallback" | "merged" = "merged";
   
   // Try Geoapify API first (fast, reliable, good UK coverage)
-  const geoapifyApiKey = process.env.GEOAPIFY_API_KEY;
+  const geoapifyApiKey = env.geoapifyApiKey;
   let geoapifySuccess = false;
   try {
     apiLogger.log(`Attempting Geoapify API (key: ${geoapifyApiKey ? 'SET' : 'NOT SET'})`);

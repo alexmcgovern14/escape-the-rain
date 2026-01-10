@@ -1251,7 +1251,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       { 
         error: "Failed to generate recommendations",
-        details: process.env.NODE_ENV === "development" ? errorMessage : undefined
+        details: env.isDevelopment ? errorMessage : undefined
       },
       { status: 500 }
     );
