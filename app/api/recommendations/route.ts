@@ -480,6 +480,7 @@ export async function GET(request: NextRequest) {
                 place,
                 isDryToday: dry,
                 rainSummary: weather.summary || "Unknown",
+                weather,
               } : null;
             })
             .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -509,6 +510,7 @@ export async function GET(request: NextRequest) {
                 },
                 isDryToday: item.isDryToday,
                 rainSummary: item.rainSummary,
+                weatherCode: item.weather?.weatherCode,
               };
             })
           );
@@ -618,6 +620,7 @@ export async function GET(request: NextRequest) {
                 place,
                 isDryToday: dry,
                 rainSummary: weather.summary || "Unknown",
+                weather,
               } : null;
             })
             .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -647,6 +650,7 @@ export async function GET(request: NextRequest) {
                 },
                 isDryToday: item.isDryToday,
                 rainSummary: item.rainSummary,
+                weatherCode: item.weather?.weatherCode,
               };
             })
           );
@@ -882,6 +886,7 @@ export async function GET(request: NextRequest) {
                 place,
                 isDryToday: dry,
                 rainSummary: weather.summary || "Unknown",
+                weather,
               } : null;
             })
             .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -911,6 +916,7 @@ export async function GET(request: NextRequest) {
                 },
                 isDryToday: item.isDryToday,
                 rainSummary: item.rainSummary,
+                weatherCode: item.weather?.weatherCode,
               };
             })
           );
@@ -1155,6 +1161,7 @@ export async function GET(request: NextRequest) {
                 place,
                 isDryToday: dry,
                 rainSummary: weather.summary || "Unknown",
+                weather,
               } : null;
             })
             .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -1185,6 +1192,7 @@ export async function GET(request: NextRequest) {
                 },
                 isDryToday: item.isDryToday,
                 rainSummary: item.rainSummary,
+                weatherCode: item.weather?.weatherCode,
               };
             })
           );
