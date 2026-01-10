@@ -66,8 +66,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" style={{ fontSize: '16px' }}>
-      <body style={{ fontSize: '16px', margin: 0, padding: 0 }}>{children}</body>
+    <html lang="en" style={{ fontSize: '12.8px' }}>
+      <body style={{ fontSize: '12.8px', margin: 0, padding: 0 }}>{children}</body>
     </html>
   );
 }
