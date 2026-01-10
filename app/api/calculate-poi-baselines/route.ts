@@ -6,6 +6,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enrichPlaceWithPOIs } from "@/lib/places";
 
+// Force dynamic rendering - this route should never be statically generated
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 // Sample locations of various sizes across UK
 const SAMPLE_LOCATIONS = [
   // Major cities

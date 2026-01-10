@@ -14,6 +14,9 @@
  * 5. Filter to dry places (not raining now and not in next N hours), sort by distance, return top 5
  */
 
+// Force dynamic rendering - API routes should never be statically generated
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from "next/server";
 import { checkWeatherAtLocation, checkWeatherBulk, isDryToday } from "@/lib/weather";
 import { fetchNearbyPlacesWithSources, enrichPlaceWithPOIs } from "@/lib/places";

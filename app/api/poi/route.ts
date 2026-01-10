@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enrichPlaceWithPOIs } from "@/lib/places";
 
+// Force dynamic rendering - API routes should never be statically generated
+export const dynamic = 'force-dynamic';
+
 /**
  * API endpoint to enrich places with POI data
  * Called asynchronously after initial recommendations are returned

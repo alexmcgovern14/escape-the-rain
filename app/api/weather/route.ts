@@ -7,6 +7,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkWeatherAtLocation } from "@/lib/weather";
 
+// Force dynamic rendering - API routes should never be statically generated
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const lat = searchParams.get("lat");

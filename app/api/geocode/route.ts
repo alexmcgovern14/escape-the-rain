@@ -7,6 +7,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { GeocodeResult } from "@/lib/types";
 
+// Force dynamic rendering - API routes should never be statically generated
+export const dynamic = 'force-dynamic';
+
 const GEOCODING_BASE_URL = "https://geocoding-api.open-meteo.com/v1/search";
 
 export async function GET(request: NextRequest) {
