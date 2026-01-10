@@ -7,6 +7,8 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { MapPin } from "lucide-react";
 import type { Recommendation } from "@/lib/types";
 import { MAP_CONFIG, ANIMATION_DURATIONS } from "@/lib/constants";
+import { env } from "@/lib/env";
+import { clientLogger } from "@/lib/logger";
 
 type MapViewProps = {
   userLocation: { lat: number; lon: number } | null;
