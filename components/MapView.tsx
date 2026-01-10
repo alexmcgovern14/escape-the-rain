@@ -335,7 +335,7 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
               clearTimeout(timeoutRef.current);
               timeoutRef.current = null;
             }
-            const errorMessage = e.error?.message || e.message || String(e) || "Failed to load map";
+            const errorMessage = e.error?.message || (e.error ? String(e.error) : String(e)) || "Failed to load map";
             console.error("[Map] Error details:", {
               error: e,
               errorMessage,
