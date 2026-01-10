@@ -1,8 +1,13 @@
 "use client";
 
 import { Cloud, Sun } from "lucide-react";
+import { COMPONENT_SIZES, ANIMATION_DURATIONS } from "@/lib/constants";
 
-// Custom rain cloud with independently animated rain lines
+/**
+ * Custom rain cloud component with independently animated rain lines
+ * @param className - Additional CSS classes
+ * @param size - Size of the cloud in pixels
+ */
 function AnimatedRainCloud({ className, size }: { className?: string; size: number }) {
   return (
     <div className={`relative ${className}`} style={{ width: `${size}px`, height: `${size * 1.4}px` }}>
@@ -55,36 +60,48 @@ function AnimatedRainCloud({ className, size }: { className?: string; size: numb
   );
 }
 
+/**
+ * Empty state component showing animated weather icons
+ * Displays rain clouds and a spinning sun to represent the app's purpose
+ */
 export default function EmptyState() {
+  const { EMPTY_STATE, SUN_ICON, RAIN_CLOUD } = COMPONENT_SIZES;
+  
   return (
     <div className="flex flex-col items-center justify-center px-4 text-center">
       {/* Animated weather icons */}
       <div className="relative w-64 h-64 lg:w-80 lg:h-80">
-        {/* Rain cloud - mobile: 85px, desktop: 100px */}
+        {/* Rain cloud - top left */}
         <div className="absolute top-0 left-0 opacity-40">
           <div className="block lg:hidden">
-            <AnimatedRainCloud className="text-blue-400" size={85} />
+            <AnimatedRainCloud className="text-blue-400" size={RAIN_CLOUD.SMALL.mobile} />
           </div>
           <div className="hidden lg:block">
-            <AnimatedRainCloud className="text-blue-400" size={100} />
+            <AnimatedRainCloud className="text-blue-400" size={RAIN_CLOUD.SMALL.desktop} />
           </div>
         </div>
         
         {/* Main sun icon */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-          <Sun className="size-32 lg:size-40 text-yellow-500 animate-spin opacity-100" style={{ animationDuration: '20s' }} />
+          <Sun 
+            className="size-32 lg:size-40 text-yellow-500 animate-spin opacity-100" 
+            style={{ 
+              animationDuration: `${ANIMATION_DURATIONS.SUN_SPIN}ms`,
+            }}
+          />
         </div>
         
-        {/* Rain clouds - mobile: 106px, desktop: 125px */}
+        {/* Rain clouds - top right */}
         <div className="absolute top-8 opacity-30" style={{ right: '-25px' }}>
           <div className="block lg:hidden">
-            <AnimatedRainCloud className="text-blue-400" size={106} />
+            <AnimatedRainCloud className="text-blue-400" size={RAIN_CLOUD.LARGE.mobile} />
           </div>
           <div className="hidden lg:block">
-            <AnimatedRainCloud className="text-blue-400" size={125} />
+            <AnimatedRainCloud className="text-blue-400" size={RAIN_CLOUD.LARGE.desktop} />
           </div>
         </div>
         
+        {/* Bottom cloud - pulsing */}
         <div className="absolute bottom-4 left-4 animate-pulse opacity-20" style={{ animationDelay: '2s' }}>
           <Cloud className="size-20 lg:size-24 text-gray-400" />
         </div>

@@ -9,6 +9,7 @@ type OpenMeteoForecastResponse = {
   hourly: {
     time: string[];
     precipitation: number[];
+    weathercode?: number[]; // WMO weather code (0-99)
   };
 };
 
@@ -16,6 +17,58 @@ export type WeatherCheckResult = {
   isRainingNow: boolean;
   willRainSoon: boolean;
   summary: string;
+  weatherCode?: number; // WMO weather code for current hour
+};
+
+/**
+ * Get weather icon type based on WMO weather code
+ * WMO codes: https://www.nodc.noaa.gov/archive/arc0021/0002199/1.1/data/0-data/HTML/WMO-CODE/WMO4677.HTM
+ */
+export function getWeatherIconFromCode(weatherCode?: number): 'sun' | 'cloud-sun' | 'cloud' | 'cloud-rain' | 'cloud-fog' | 'wind' | 'snowflake' | 'cloud-drizzle' {
+  if (weatherCode === undefined) return 'cloud-sun'; // Default fallback
+  
+  // WMO Weather Code mapping:
+  // 0: Clear sky -> sun
+  // 1-3: Mainly clear, partly cloudy, overcast -> cloud-sun or cloud
+  // 45-48: Fog and depositing rime fog -> cloud-fog
+  // 51-55: Drizzle -> cloud-drizzle
+  // 56-57: Freezing drizzle -> cloud-drizzle
+  // 61-65: Rain -> cloud-rain
+  // 66-67: Freezing rain -> cloud-rain
+  // 71-77: Snow -> snowflake
+  // 80-82: Rain showers -> cloud-rain
+  // 85-86: Snow showers -> snowflake
+  // 95: Thunderstorm -> cloud-rain
+  // 96-99: Thunderstorm with hail -> cloud-rain
+  
+  if (weatherCode === 0) {
+    return 'sun'; // Clear sky
+  } else if (weatherCode >= 1 && weatherCode <= 3) {
+    return 'cloud-sun'; // Mainly clear, partly cloudy, overcast
+  } else if (weatherCode >= 45 && weatherCode <= 48) {
+    return 'cloud-fog'; // Fog
+  } else if (weatherCode >= 51 && weatherCode <= 57) {
+    return 'cloud-drizzle'; // Drizzle
+  } else if (weatherCode >= 61 && weatherCode <= 67) {
+    return 'cloud-rain'; // Rain
+  } else if (weatherCode >= 71 && weatherCode <= 77) {
+    return 'snowflake'; // Snow
+  } else if (weatherCode >= 80 && weatherCode <= 82) {
+    return 'cloud-rain'; // Rain showers
+  } else if (weatherCode >= 85 && weatherCode <= 86) {
+    return 'snowflake'; // Snow showers
+  } else if (weatherCode >= 95 && weatherCode <= 99) {
+    return 'cloud-rain'; // Thunderstorm
+  }
+  
+  // Default fallback
+  return 'cloud-sun';
+}
+
+export type UserWeatherStatus = {
+  status: 'rain-hours' | 'dry-until' | 'rain-all-day' | 'dry-all-day';
+  hours?: number; // For 'rain-hours': number of hours of rain
+  time?: string; // For 'dry-until': time when rain starts (e.g., "2:00 PM")
 };
 
 /**
@@ -77,10 +130,96 @@ export async function checkWeatherAtLocation(
     summary = "Dry all day";
   }
 
+  // Get current weather code for icon
+  const currentWeatherCode = data.hourly.weathercode?.[0];
+
   return {
     isRainingNow,
     willRainSoon,
     summary,
+    weatherCode: currentWeatherCode,
+  };
+}
+
+/**
+ * Get detailed weather status for user location header display
+ * Returns formatted status for: "Rain for next X hours", "Rain at X PM", "Rain all day", "Dry all day"
+ */
+export async function getUserWeatherStatus(
+  lat: number,
+  lon: number
+): Promise<UserWeatherStatus> {
+  const url = new URL(`${OPEN_METEO_BASE_URL}/forecast`);
+  url.searchParams.set("latitude", lat.toString());
+  url.searchParams.set("longitude", lon.toString());
+  url.searchParams.set("hourly", "precipitation,weathercode");
+  url.searchParams.set("forecast_days", "1");
+  url.searchParams.set("timezone", "auto");
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw new Error(`Weather API error: ${response.statusText}`);
+  }
+
+  const data: OpenMeteoForecastResponse = await response.json();
+  const precipitation = data.hourly.precipitation;
+  const times = data.hourly.time;
+
+  // Check current hour (index 0)
+  const currentPrecipitation = precipitation[0] || 0;
+  const isRainingNow = currentPrecipitation > 0.1;
+
+  // Check all 24 hours
+  const full24Hours = precipitation.slice(0, 24);
+  const hasRainIn24Hours = full24Hours.some((p) => p > 0.1);
+  const allHoursHaveRain = full24Hours.every((p) => p > 0.1);
+
+  // If raining now
+  if (isRainingNow) {
+    // Count consecutive hours of rain from now
+    let consecutiveRainHours = 1;
+    for (let i = 1; i < 24; i++) {
+      if (precipitation[i] > 0.1) {
+        consecutiveRainHours++;
+      } else {
+        break;
+      }
+    }
+
+    // If it's raining all day
+    if (allHoursHaveRain) {
+      return { status: 'rain-all-day' };
+    }
+
+    // Otherwise, return hours of rain
+    return { 
+      status: 'rain-hours',
+      hours: consecutiveRainHours
+    };
+  }
+
+  // If not raining now, check when rain will start
+  const firstRainIndex = full24Hours.findIndex((p) => p > 0.1);
+  
+  if (firstRainIndex === -1) {
+    // No rain in next 24 hours
+    return { status: 'dry-all-day' };
+  }
+
+  // Rain will start later - format the time
+  const rainStartTime = times[firstRainIndex];
+  const date = new Date(rainStartTime);
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const displayHours = hours % 12 || 12;
+  const timeString = minutes > 0 
+    ? `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`
+    : `${displayHours} ${ampm}`;
+
+  return {
+    status: 'dry-until',
+    time: timeString
   };
 }
 
@@ -105,7 +244,7 @@ export async function checkWeatherBulk(
     const url = new URL(`${OPEN_METEO_BASE_URL}/forecast`);
     url.searchParams.set("latitude", batch.map((c) => c.lat.toString()).join(","));
     url.searchParams.set("longitude", batch.map((c) => c.lon.toString()).join(","));
-    url.searchParams.set("hourly", "precipitation");
+    url.searchParams.set("hourly", "precipitation,weathercode");
     url.searchParams.set("forecast_days", "1");
     url.searchParams.set("timezone", "auto");
 
@@ -160,6 +299,7 @@ export async function checkWeatherBulk(
 
       const coord = batch[index];
       const precipitation = locationData.hourly.precipitation;
+      const weathercode = locationData.hourly.weathercode;
       
       if (!Array.isArray(precipitation) || precipitation.length === 0) {
         console.log(`Invalid precipitation data for ${coord.lat},${coord.lon}`);
@@ -168,6 +308,7 @@ export async function checkWeatherBulk(
 
       const currentPrecipitation = precipitation[0] || 0;
       const isRainingNow = currentPrecipitation > 0.1;
+      const currentWeatherCode = Array.isArray(weathercode) && weathercode.length > 0 ? weathercode[0] : undefined;
 
       // Use provided hoursAhead parameter
       const hoursToCheck = Math.min(hoursAhead, 24);
@@ -207,6 +348,7 @@ export async function checkWeatherBulk(
         isRainingNow,
         willRainSoon,
         summary,
+        weatherCode: currentWeatherCode,
       });
     });
   }

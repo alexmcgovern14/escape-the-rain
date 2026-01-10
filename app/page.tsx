@@ -6,7 +6,9 @@ import LocationSelector from "@/components/LocationSelector";
 import EmptyState from "@/components/EmptyState";
 import DestinationCard from "@/components/DestinationCard";
 import Footer from "@/components/Footer";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import type { RecommendationResponse } from "@/lib/types";
+import { getUserWeatherStatus, type UserWeatherStatus } from "@/lib/weather";
 
 // Dynamically import MapView to avoid SSR issues with Mapbox
 const MapView = dynamic(() => import("@/components/MapView"), {
@@ -29,6 +31,7 @@ export default function Home() {
   const [searchDistance, setSearchDistance] = useState<string>("auto"); // Default: "auto"
   const [showSettings, setShowSettings] = useState(false);
   const [poiLoading, setPoiLoading] = useState(false);
+  const [userWeather, setUserWeather] = useState<UserWeatherStatus | undefined>(undefined);
 
   const handleLocationSelect = async (lat: number, lon: number, source: "geolocation" | "manual", locationName?: string) => {
     // Trigger exit animation
@@ -57,6 +60,15 @@ export default function Home() {
         const displayName = locationName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
         setSelectedLocation(displayName);
 
+        // Fetch user weather status for header display
+        try {
+          const weatherStatus = await getUserWeatherStatus(lat, lon);
+          setUserWeather(weatherStatus);
+        } catch (error) {
+          console.error("Failed to fetch user weather status:", error);
+          // Don't block the UI if weather fetch fails
+        }
+
         // Determine status based on weather (checked for 12 hours)
         if (!result.localWeather.isRainingNow && !result.localWeather.willRainSoon) {
           setStatus("not-raining");
@@ -68,41 +80,101 @@ export default function Home() {
         setIsExiting(false);
 
         // Fetch POI data asynchronously after initial results are shown
+        // Batch all places into a single API call for maximum speed
         if (result.recommendations && result.recommendations.length > 0) {
           setPoiLoading(true);
-          fetchPOIData(result.recommendations).then((poiData) => {
-            if (poiData) {
-              // Update recommendations with POI data
-              setData((currentData) => {
-                if (!currentData) return currentData;
-                const updatedRecommendations = currentData.recommendations.map((rec) => {
-                  const poiInfo = poiData.find(
-                    (p: { lat: number; lon: number; name: string; nearbyPOIs: string[]; poiSummary: string }) => 
-                      p.lat === rec.place.lat && p.lon === rec.place.lon && p.name === rec.place.name
-                  );
-                  if (poiInfo) {
-                    return {
-                      ...rec,
-                      place: {
-                        ...rec.place,
-                        nearbyPOIs: poiInfo.nearbyPOIs,
-                        poiSummary: poiInfo.poiSummary,
-                      },
-                    };
+          console.log("[POI] Starting async POI fetch for", result.recommendations.length, "places...");
+          
+          // Batch all places into a single API call - much faster than individual calls
+          const places = result.recommendations.map((rec) => ({
+            lat: rec.place.lat,
+            lon: rec.place.lon,
+            name: rec.place.name,
+          }));
+
+          fetch("/api/poi", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ places }),
+          })
+            .then(async (response) => {
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error("[POI] POI API error:", response.status, response.statusText, errorText);
+                setPoiLoading(false);
+                return;
+              }
+
+              const poiResult = await response.json();
+              if (poiResult.places && Array.isArray(poiResult.places)) {
+                console.log(`[POI] Received POI data for ${poiResult.places.length} places`);
+                
+                // Update all places at once in a single state update - faster and all pills appear together
+                setData((currentData) => {
+                  if (!currentData) {
+                    return currentData;
                   }
-                  return rec;
+                  
+                  // Create a map of POI data by name for fast lookup
+                  const poiMap = new Map<string, { nearbyPOIs: string[]; poiSummary: string }>();
+                  poiResult.places.forEach((poiInfo: { lat: number; lon: number; name: string; nearbyPOIs: string[]; poiSummary: string }) => {
+                    poiMap.set(poiInfo.name, {
+                      nearbyPOIs: Array.isArray(poiInfo.nearbyPOIs) && poiInfo.nearbyPOIs.length > 0 
+                        ? [...poiInfo.nearbyPOIs] 
+                        : [],
+                      poiSummary: poiInfo.poiSummary || "",
+                    });
+                  });
+                  
+                  // Update all recommendations that have POI data
+                  const updatedRecommendations = currentData.recommendations.map((r) => {
+                    // Try to find POI data by name first (most reliable)
+                    let poiData = poiMap.get(r.place.name);
+                    
+                    // If no name match, try by coordinates
+                    if (!poiData) {
+                      poiData = poiResult.places.find(
+                        (p: { lat: number; lon: number; name: string }) =>
+                          Math.abs(p.lat - r.place.lat) < 0.01 && Math.abs(p.lon - r.place.lon) < 0.01
+                      );
+                      if (poiData) {
+                        poiData = {
+                          nearbyPOIs: Array.isArray(poiData.nearbyPOIs) && poiData.nearbyPOIs.length > 0 
+                            ? [...poiData.nearbyPOIs] 
+                            : [],
+                          poiSummary: poiData.poiSummary || "",
+                        };
+                      }
+                    }
+                    
+                    if (poiData) {
+                      console.log(`[POI] ✓ Updating ${r.place.name} with ${poiData.nearbyPOIs.length} POIs`);
+                      return {
+                        ...r,
+                        place: {
+                          ...r.place,
+                          nearbyPOIs: poiData.nearbyPOIs,
+                          poiSummary: poiData.poiSummary,
+                        },
+                      };
+                    }
+                    return r;
+                  });
+                  
+                  return {
+                    ...currentData,
+                    recommendations: updatedRecommendations,
+                  };
                 });
-                return {
-                  ...currentData,
-                  recommendations: updatedRecommendations,
-                };
-              });
-            }
-            setPoiLoading(false);
-          }).catch((error) => {
-            console.error("Error fetching POI data:", error);
-            setPoiLoading(false);
-          });
+              }
+              setPoiLoading(false);
+            })
+            .catch((error) => {
+              console.error("[POI] Error fetching POI data:", error);
+              setPoiLoading(false);
+            });
         }
       } catch (error) {
         console.error("Error fetching recommendations:", error);
@@ -124,37 +196,10 @@ export default function Home() {
     setPoiLoading(false);
   };
 
-  // Fetch POI data for all recommendations
-  const fetchPOIData = async (recommendations: RecommendationResponse["recommendations"]) => {
-    try {
-      const places = recommendations.map((rec) => ({
-        lat: rec.place.lat,
-        lon: rec.place.lon,
-        name: rec.place.name,
-      }));
-
-      const response = await fetch("/api/poi", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ places }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`POI API error: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      return result.places;
-    } catch (error) {
-      console.error("Error fetching POI data:", error);
-      return null;
-    }
-  };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <ErrorBoundary>
+      <div className="min-h-screen bg-background flex flex-col">
       {/* Conditional Rendering: Empty State or Results */}
       {!selectedLocation ? (
         /* Empty State - 4 Components Evenly Distributed */
@@ -307,6 +352,7 @@ export default function Home() {
                 onLocationSelect={handleLocationSelect}
                 selectedLocation={selectedLocation}
                 collapsed={true}
+                userWeather={userWeather}
               />
             </div>
           </div>
@@ -314,36 +360,31 @@ export default function Home() {
           {/* Main Content - grows to fill available space */}
           <div className="flex-1">
             <div className="max-w-7xl mx-auto px-4 w-full py-6 animate-slide-up" style={{ animationDelay: '0.15s' }}>
-              {/* Status Message (if not raining) */}
-              {status === "not-raining" && (
-                <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-6 text-center animate-fade-in-up" style={{ animationDelay: '0.25s' }}>
-                  <div className="text-4xl mb-3">☀️</div>
-                  <p className="text-green-800 font-medium text-lg mb-2">Good news!</p>
-                  <p className="text-green-700">
-                    {statusMessage || "It's not raining at your location for the next 12 hours – enjoy it!"}
-                  </p>
-                </div>
-              )}
-
               {/* Desktop: Two Column Layout | Mobile: Stacked */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Left Column: Destinations List */}
-                <div className="order-2 lg:order-1 flex flex-col">
+                <div className="order-2 lg:order-1 flex flex-col lg:overflow-hidden">
                   <h2 className="mb-5 text-2xl">Dry destinations nearby</h2>
                   {data && data.recommendations.length > 0 ? (
-                    <div className="flex flex-col gap-4 lg:h-[calc(100vh-180px)] lg:overflow-y-auto">
-                      {data.recommendations.map((destination, index) => (
-                        <div 
-                          key={destination.place.id}
-                          className="animate-fade-in-up flex-1"
-                          style={{ animationDelay: `${0.4 + index * 0.1}s` }}
-                        >
-                          <DestinationCard 
-                            destination={destination}
-                            index={index}
-                          />
-                        </div>
-                      ))}
+                    <div className="flex flex-col gap-4 flex-1 lg:overflow-hidden">
+                      {data.recommendations.map((destination, index) => {
+                        // Use stable key based on place ID only - don't change when POI data arrives
+                        // This prevents re-animation when POI data updates
+                        const stableKey = destination.place.id;
+                        
+                        return (
+                          <div 
+                            key={stableKey}
+                            className="animate-fade-in-up flex-1"
+                            style={{ animationDelay: `${0.4 + index * 0.1}s` }}
+                          >
+                            <DestinationCard 
+                              destination={destination}
+                              index={index}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : data && data.recommendations.length === 0 ? (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
@@ -383,6 +424,7 @@ export default function Home() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }

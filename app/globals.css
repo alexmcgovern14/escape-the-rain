@@ -294,3 +294,13 @@ html {
   outline: none !important;
   box-shadow: none !important;
 }
+
+/* Hide scrollbar for horizontal scrollable pills */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari and Opera */
+}

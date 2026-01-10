@@ -30,6 +30,7 @@ export type Recommendation = {
   place: Place;
   isDryToday: boolean;
   rainSummary: string;
+  weatherCode?: number; // WMO weather code for icon display
 };
 
 export type RecommendationResponse = {
