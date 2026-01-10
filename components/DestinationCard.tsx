@@ -88,7 +88,7 @@ export default function DestinationCard({ destination, index }: DestinationCardP
     
     if (currentHasPOIData && currentPOIs && currentPOIs.length > 0) {
       const filteredPOIs = currentPOIs.filter(
-        poi => poi && !POI_FILTERS.EXCLUDED_KEYWORDS.includes(poi.toLowerCase())
+        poi => poi && !(POI_FILTERS.EXCLUDED_KEYWORDS as readonly string[]).includes(poi.toLowerCase())
       );
       const limited = filteredPOIs.slice(0, SEARCH_CONFIG.POI_LIMIT);
       result.push(...limited);
@@ -108,7 +108,7 @@ export default function DestinationCard({ destination, index }: DestinationCardP
           word.length >= POI_FILTERS.MIN_KEYWORD_LENGTH && 
           word.length <= POI_FILTERS.MAX_KEYWORD_LENGTH
         )
-        .filter(word => !POI_FILTERS.EXCLUDED_KEYWORDS.includes(word.toLowerCase()))
+        .filter(word => !(POI_FILTERS.EXCLUDED_KEYWORDS as readonly string[]).includes(word.toLowerCase()))
         .slice(0, SEARCH_CONFIG.POI_LIMIT);
       result.push(...keywords);
     }
@@ -134,7 +134,7 @@ export default function DestinationCard({ destination, index }: DestinationCardP
           return pluralized;
         });
         const filteredKinds = formattedKinds.filter(
-          kind => !POI_FILTERS.EXCLUDED_KEYWORDS.includes(kind.toLowerCase())
+          kind => !(POI_FILTERS.EXCLUDED_KEYWORDS as readonly string[]).includes(kind.toLowerCase())
         );
         result.push(...filteredKinds.slice(0, SEARCH_CONFIG.POI_LIMIT));
       }
