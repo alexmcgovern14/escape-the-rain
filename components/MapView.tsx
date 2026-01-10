@@ -14,16 +14,16 @@ type MapViewProps = {
 };
 
 export default function MapView({ userLocation, recommendations }: MapViewProps) {
-  const apiKey = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+  const apiKey = env.mapboxAccessToken;
   const [selectedPlace, setSelectedPlace] = useState<string | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const mapRef = useRef<MapRef>(null);
   
   // Log API key status on mount
   useEffect(() => {
-    console.log("[Map] Component mounted, API key present:", !!apiKey);
+    clientLogger.debug("[Map] Component mounted, API key present:", !!apiKey);
     if (!apiKey) {
-      console.error("[Map] Mapbox access token is missing! Add NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to .env.local");
+      clientLogger.error("[Map] Mapbox access token is missing! Add NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to .env.local");
     }
   }, [apiKey]);
 
@@ -54,20 +54,20 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
       try {
         // @ts-ignore - mapboxgl might not be in types
         if (window.mapboxgl) {
-          console.log("[Map] Mapbox GL library is loaded");
+          clientLogger.debug("[Map] Mapbox GL library is loaded");
         } else {
-          console.warn("[Map] Mapbox GL library not found in window object");
+          clientLogger.warn("[Map] Mapbox GL library not found in window object");
         }
       } catch (e) {
-        console.warn("[Map] Error checking Mapbox library:", e);
+        clientLogger.warn("[Map] Error checking Mapbox library:", e);
       }
       
       // Check if react-map-gl is available
       try {
         const mapboxGl = require('mapbox-gl');
-        console.log("[Map] mapbox-gl module loaded:", !!mapboxGl);
+        clientLogger.debug("[Map] mapbox-gl module loaded:", !!mapboxGl);
       } catch (e) {
-        console.error("[Map] Failed to load mapbox-gl module:", e);
+        clientLogger.error("[Map] Failed to load mapbox-gl module:", e);
       }
     }
   }, []);
@@ -79,7 +79,7 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
         try {
           const map = mapRef.current?.getMap();
           if (map && map.loaded()) {
-            console.log("[Map] Map instance detected as loaded (fallback check)");
+            clientLogger.debug("[Map] Map instance detected as loaded (fallback check)");
             setMapLoaded(true);
             if (timeoutRef.current) {
               clearTimeout(timeoutRef.current);
@@ -104,12 +104,12 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
   useEffect(() => {
     if (!mapLoaded && !mapError && apiKey) {
       fallbackTimeoutRef.current = setTimeout(() => {
-        console.log("[Map] Fallback: Showing map after 3 seconds (onLoad may not have fired)");
+        clientLogger.debug("[Map] Fallback: Showing map after 3 seconds (onLoad may not have fired)");
         // Check if map instance exists
         try {
           const map = mapRef.current?.getMap();
           if (map) {
-            console.log("[Map] Map instance exists, showing map");
+            clientLogger.debug("[Map] Map instance exists, showing map");
             setMapLoaded(true);
             if (timeoutRef.current) {
               clearTimeout(timeoutRef.current);
@@ -117,7 +117,7 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
             }
           }
         } catch (e) {
-          console.warn("[Map] Map instance not available yet");
+          clientLogger.warn("[Map] Map instance not available yet");
         }
       }, 3000);
       
@@ -139,12 +139,12 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
       }
       
       timeoutRef.current = setTimeout(() => {
-        console.warn("[Map] Map load timeout - map didn't load within 10 seconds");
+        clientLogger.warn("[Map] Map load timeout - map didn't load within 10 seconds");
         // Check one more time if map is actually loaded
         try {
           const map = mapRef.current?.getMap();
           if (map && map.loaded()) {
-            console.log("[Map] Map was actually loaded, just onLoad didn't fire");
+            clientLogger.debug("[Map] Map was actually loaded, just onLoad didn't fire");
             setMapLoaded(true);
             return;
           }
@@ -228,9 +228,9 @@ export default function MapView({ userLocation, recommendations }: MapViewProps)
   // Log API key status (without exposing the key)
   useEffect(() => {
     if (!apiKey) {
-      console.error("[Map] Mapbox access token is missing! Add NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to .env.local");
+      clientLogger.error("[Map] Mapbox access token is missing! Add NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN to .env.local");
     } else {
-      console.log("[Map] Mapbox token is present, initializing map...");
+      clientLogger.debug("[Map] Mapbox token is present, initializing map...");
     }
   }, [apiKey]);
 

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MapPin, Search, Edit2, CloudRain, Sun } from "lucide-react";
+import { clientLogger } from "@/lib/logger";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import type { GeocodeResult } from "@/lib/types";
@@ -74,7 +75,7 @@ export default function LocationSelector({
       setShowResults(results.length > 0);
       setSelectedIndex(-1);
     } catch (error) {
-      console.error("Geocoding error:", error);
+      clientLogger.error("Geocoding error:", error);
       setSearchResults([]);
       setShowResults(false);
     } finally {
@@ -325,7 +326,7 @@ export default function LocationSelector({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                console.log("Selecting result:", result.name); // Debug log
+                clientLogger.debug("Selecting result:", result.name);
                 handleSelectResult(result);
               }}
               onMouseEnter={() => setSelectedIndex(index)}

@@ -6,6 +6,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { fetchNearbyPlaces } from "@/lib/places";
+import { apiLogger } from "@/lib/logger";
+import { env } from "@/lib/env";
 
 // Force dynamic rendering - API routes should never be statically generated
 export const dynamic = 'force-dynamic';
@@ -23,13 +25,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const apiKey = process.env.OPENTRIPMAP_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "OpenTripMap API key not configured" },
-      { status: 500 }
-    );
-  }
+  const apiKey = env.opentripmapApiKey;
 
   const latitude = parseFloat(lat);
   const longitude = parseFloat(lon);
@@ -60,7 +56,7 @@ export async function GET(request: NextRequest) {
     const places = await fetchNearbyPlaces(latitude, longitude, radius, apiKey);
     return NextResponse.json({ places });
   } catch (error) {
-    console.error("Places fetch error:", error);
+    apiLogger.error("Places fetch error:", error);
     return NextResponse.json(
       { error: "Failed to fetch places" },
       { status: 500 }

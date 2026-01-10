@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import type { GeocodeResult } from "@/lib/types";
+import { apiLogger } from "@/lib/logger";
 
 // Force dynamic rendering - API routes should never be statically generated
 export const dynamic = 'force-dynamic';
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
           results = [...results, ...newResults].slice(0, 30); // Limit to 30 total
         }
       } catch (nominatimError) {
-        console.error("Nominatim fallback error:", nominatimError);
+        apiLogger.error("Nominatim fallback error:", nominatimError);
         // Continue with Open-Meteo results only
       }
     }
@@ -116,7 +117,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ results: deduplicatedResults.slice(0, 30) });
   } catch (error) {
-    console.error("Geocoding error:", error);
+    apiLogger.error("Geocoding error:", error);
     return NextResponse.json(
       { error: "Failed to geocode location" },
       { status: 500 }

@@ -6,6 +6,7 @@
 import type { Place } from "./types";
 import { haversineDistance } from "./geo";
 import { POI_BASELINES } from "./constants";
+import { poiLogger, apiLogger } from "./logger";
 
 const OPENTRIPMAP_BASE_URL = "https://api.opentripmap.com/0.1/en/places";
 
@@ -107,7 +108,7 @@ export async function enrichPlaceWithPOIs(
   apiKey: string
 ): Promise<{ nearbyPOIs: string[]; poiSummary: string }> {
   if (!apiKey) {
-    console.log(`[POI] No API key provided for ${placeName}`);
+    poiLogger.warn(`No API key provided for ${placeName}`);
     return { nearbyPOIs: [], poiSummary: "" };
   }
 
@@ -169,18 +170,18 @@ export async function enrichPlaceWithPOIs(
     url.searchParams.set("limit", "50");
     url.searchParams.set("apiKey", apiKey);
 
-    console.log(`[POI] Fetching POIs for ${placeName} at ${lat},${lon}`);
+    poiLogger.log(`Fetching POIs for ${placeName} at ${lat},${lon}`);
     const response = await fetch(url.toString());
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[POI] Geoapify POI API error: ${response.status} - ${errorText.substring(0, 200)}`);
+      poiLogger.error(`Geoapify POI API error: ${response.status} - ${errorText.substring(0, 200)}`);
       return { nearbyPOIs: [], poiSummary: "" };
     }
 
     const data = await response.json();
     const features = data.features || [];
-    console.log(`[POI] Found ${features.length} POI features for ${placeName}`);
+    poiLogger.log(`Found ${features.length} POI features for ${placeName}`);
 
     // Collect POI types with counts (volume/strength)
     const poiTypeCounts = new Map<string, number>();
@@ -213,7 +214,7 @@ export async function enrichPlaceWithPOIs(
       
       // Log first feature for debugging
       if (features.indexOf(feature) === 0) {
-        console.log(`[POI] Sample feature for ${placeName}:`, {
+        poiLogger.debug(`Sample feature for ${placeName}:`, {
           name: properties.name,
           categories: categories,
           allProperties: Object.keys(properties)
@@ -276,7 +277,7 @@ export async function enrichPlaceWithPOIs(
         return a.type.localeCompare(b.type);
       })
       .map(({ type }) => type);
-    console.log(`[POI] Mapped POI types for ${placeName}:`, nearbyPOIs);
+    poiLogger.debug(`Mapped POI types for ${placeName}:`, nearbyPOIs);
     
     // Generate a user-friendly summary
     let poiSummary = "";
@@ -296,10 +297,10 @@ export async function enrichPlaceWithPOIs(
       poiSummary = `${top5.join(", ")}, and more`;
     }
 
-    console.log(`[POI] Final summary for ${placeName}: "${poiSummary}"`);
+    poiLogger.log(`Final summary for ${placeName}: "${poiSummary}"`);
     return { nearbyPOIs, poiSummary };
   } catch (error) {
-    console.error(`[POI] Error fetching POIs for ${placeName}:`, error);
+    poiLogger.error(`Error fetching POIs for ${placeName}:`, error);
     return { nearbyPOIs: [], poiSummary: "" };
   }
 }
@@ -340,10 +341,10 @@ export async function fetchNearbyPlacesWithSources(
   const geoapifyApiKey = process.env.GEOAPIFY_API_KEY;
   let geoapifySuccess = false;
   try {
-    console.log(`[API] Attempting Geoapify API (key: ${geoapifyApiKey ? 'SET' : 'NOT SET'})`);
+    apiLogger.log(`Attempting Geoapify API (key: ${geoapifyApiKey ? 'SET' : 'NOT SET'})`);
     geoapifyPlaces = await fetchPlacesFromGeoapify(lat, lon, radiusKm, geoapifyApiKey || '');
     if (geoapifyPlaces.length >= 5) {
-      console.log(`[API SUCCESS] Geoapify returned ${geoapifyPlaces.length} places`);
+      apiLogger.log(`[API SUCCESS] Geoapify returned ${geoapifyPlaces.length} places`);
       geoapifySuccess = true;
       apiSources.push("geoapify");
       return {
@@ -356,25 +357,25 @@ export async function fetchNearbyPlacesWithSources(
         fallbackUsed: false,
       };
     } else if (geoapifyPlaces.length > 0) {
-      console.log(`[API PARTIAL] Geoapify returned ${geoapifyPlaces.length} places (need 5+), supplementing with other sources`);
+      apiLogger.log(`[API PARTIAL] Geoapify returned ${geoapifyPlaces.length} places (need 5+), supplementing with other sources`);
       geoapifySuccess = true;
       apiSources.push("geoapify");
       // Continue to try other sources and merge
     } else {
-      console.log(`[API FAIL] Geoapify returned 0 places`);
+      apiLogger.log(`[API FAIL] Geoapify returned 0 places`);
     }
   } catch (error) {
-    console.log(`[API FAIL] Geoapify error:`, error);
+    apiLogger.error(`[API FAIL] Geoapify error:`, error);
   }
 
   // Try Nominatim API as fallback (free, reliable, good UK coverage for settlements)
   // Skip if already failed in this request
   let nominatimSuccess = false;
   if (failedApisSet.has("nominatim")) {
-    console.log(`[API] Skipping Nominatim - already failed in this request`);
+    apiLogger.log(`[API] Skipping Nominatim - already failed in this request`);
   } else {
     try {
-      console.log(`[API] Attempting Nominatim API`);
+      apiLogger.log(`[API] Attempting Nominatim API`);
       const nominatimPromise = fetchPlacesFromNominatim(lat, lon, radiusKm, failedApisSet);
       const timeoutPromise = new Promise<Place[]>((resolve) => 
         setTimeout(() => resolve([]), 8000) // 8 second timeout
@@ -382,7 +383,7 @@ export async function fetchNearbyPlacesWithSources(
       nominatimPlaces = await Promise.race([nominatimPromise, timeoutPromise]);
     
     if (nominatimPlaces.length >= 5 && geoapifyPlaces.length === 0) {
-      console.log(`[API SUCCESS] Nominatim returned ${nominatimPlaces.length} places`);
+      apiLogger.log(`[API SUCCESS] Nominatim returned ${nominatimPlaces.length} places`);
       nominatimSuccess = true;
       apiSources.push("nominatim");
       return {
@@ -395,18 +396,18 @@ export async function fetchNearbyPlacesWithSources(
         fallbackUsed: false,
       };
     } else if (nominatimPlaces.length > 0) {
-      console.log(`[API PARTIAL] Nominatim returned ${nominatimPlaces.length} places, will supplement with OpenTripMap/fallback`);
+      apiLogger.log(`[API PARTIAL] Nominatim returned ${nominatimPlaces.length} places, will supplement with OpenTripMap/fallback`);
       nominatimSuccess = true;
       apiSources.push("nominatim");
     } else {
-      console.log(`[API FAIL] Nominatim returned 0 places (may have timed out)`);
+      apiLogger.log(`[API FAIL] Nominatim returned 0 places (may have timed out)`);
     }
     } catch (error: any) {
-      console.log(`[API FAIL] Nominatim error:`, error);
+      apiLogger.error(`[API FAIL] Nominatim error:`, error);
       // Check if it's a 403 error and mark as failed
       if (error?.status === 403 || error?.message?.includes('403') || error?.response?.status === 403) {
         failedApisSet.add("nominatim");
-        console.log(`[API] Marking Nominatim as failed (403 Forbidden) - will skip in future calls`);
+        apiLogger.log(`[API] Marking Nominatim as failed (403 Forbidden) - will skip in future calls`);
       }
     }
   }
@@ -415,11 +416,11 @@ export async function fetchNearbyPlacesWithSources(
   // Skip if already failed in this request
   let data: any = null;
   if (failedApisSet.has("opentripmap")) {
-    console.log(`[API] Skipping OpenTripMap - already failed in this request`);
+    apiLogger.log(`[API] Skipping OpenTripMap - already failed in this request`);
     data = null;
   } else if (!apiKey) {
-    console.error(`[API FAIL] OpenTripMap: API key not provided`);
-    console.error(`[API ERROR DETAILS] Error Type: Missing API Key | Location: ${lat},${lon} | Radius: ${radiusKm}km`);
+    apiLogger.error(`[API FAIL] OpenTripMap: API key not provided`);
+    apiLogger.error(`[API ERROR DETAILS] Error Type: Missing API Key | Location: ${lat},${lon} | Radius: ${radiusKm}km`);
     data = null;
   } else {
     // Calculate bounding box for the radius
@@ -452,12 +453,12 @@ export async function fetchNearbyPlacesWithSources(
       const errorType = fetchError.name || "Unknown";
       const errorMessage = fetchError.message || "No error message";
       const errorCode = fetchError.code || "N/A";
-      console.error(`[API FAIL] OpenTripMap: Network/Request Error (bbox endpoint)`);
-      console.error(`[API ERROR DETAILS] Error Type: ${errorType} | Error Code: ${errorCode} | Message: ${errorMessage}`);
-      console.error(`[API ERROR DETAILS] Request URL: ${requestUrl.replace(apiKey, 'API_KEY_HIDDEN')}`);
-      console.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
+      apiLogger.error(`[API FAIL] OpenTripMap: Network/Request Error (bbox endpoint)`);
+      apiLogger.error(`[API ERROR DETAILS] Error Type: ${errorType} | Error Code: ${errorCode} | Message: ${errorMessage}`);
+      apiLogger.error(`[API ERROR DETAILS] Request URL: ${requestUrl.replace(apiKey, 'API_KEY_HIDDEN')}`);
+      apiLogger.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
       if (errorCode === "ECONNREFUSED") {
-        console.error(`[API ERROR DETAILS] Likely Cause: Connection refused - OpenTripMap server may be down`);
+        apiLogger.error(`[API ERROR DETAILS] Likely Cause: Connection refused - OpenTripMap server may be down`);
       }
       // Fall through to try radius endpoint
       data = null;
@@ -472,23 +473,23 @@ export async function fetchNearbyPlacesWithSources(
           data = JSON.parse(responseText);
           // Check if response contains an error even with 200 status
           if (data && typeof data === 'object' && data.error) {
-            console.error(`[API FAIL] OpenTripMap: Error in response body (bbox endpoint, status 200)`);
-            console.error(`[API ERROR DETAILS] Error: ${data.error} | Message: ${data.message || "No message"}`);
+            apiLogger.error(`[API FAIL] OpenTripMap: Error in response body (bbox endpoint, status 200)`);
+            apiLogger.error(`[API ERROR DETAILS] Error: ${data.error} | Message: ${data.message || "No message"}`);
           }
         } catch (parseError: any) {
-          console.error(`[API FAIL] OpenTripMap: JSON Parse Error (bbox endpoint)`);
-          console.error(`[API ERROR DETAILS] Error Type: ${parseError.name || "JSONParseError"} | Message: ${parseError.message || "Invalid JSON"}`);
-          console.error(`[API ERROR DETAILS] Response Text (first 500 chars): ${responseText.substring(0, 500)}`);
+          apiLogger.error(`[API FAIL] OpenTripMap: JSON Parse Error (bbox endpoint)`);
+          apiLogger.error(`[API ERROR DETAILS] Error Type: ${parseError.name || "JSONParseError"} | Message: ${parseError.message || "Invalid JSON"}`);
+          apiLogger.error(`[API ERROR DETAILS] Response Text (first 500 chars): ${responseText.substring(0, 500)}`);
           data = null;
         }
       } catch (readError: any) {
-        console.error(`[API FAIL] OpenTripMap: Error reading response (bbox endpoint)`);
-        console.error(`[API ERROR DETAILS] Error Type: ${readError.name || "ReadError"} | Message: ${readError.message || "Could not read response"}`);
+        apiLogger.error(`[API FAIL] OpenTripMap: Error reading response (bbox endpoint)`);
+        apiLogger.error(`[API ERROR DETAILS] Error Type: ${readError.name || "ReadError"} | Message: ${readError.message || "Could not read response"}`);
         data = null;
       }
     } else {
       // Fallback to radius endpoint
-      console.log(`[API] OpenTripMap bbox endpoint failed (${response.status}), trying radius endpoint`);
+      apiLogger.log(`[API] OpenTripMap bbox endpoint failed (${response.status}), trying radius endpoint`);
       const radiusUrl = new URL(`${OPENTRIPMAP_BASE_URL}/radius`);
       radiusUrl.searchParams.set("radius", (radiusKm * 1000).toString());
       radiusUrl.searchParams.set("lon", lon.toString());
@@ -505,10 +506,10 @@ export async function fetchNearbyPlacesWithSources(
         const errorType = fetchError.name || "Unknown";
         const errorMessage = fetchError.message || "No error message";
         const errorCode = fetchError.code || "N/A";
-        console.error(`[API FAIL] OpenTripMap: Network/Request Error (radius endpoint)`);
-        console.error(`[API ERROR DETAILS] Error Type: ${errorType} | Error Code: ${errorCode} | Message: ${errorMessage}`);
-        console.error(`[API ERROR DETAILS] Request URL: ${requestUrl.replace(apiKey, 'API_KEY_HIDDEN')}`);
-        console.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
+        apiLogger.error(`[API FAIL] OpenTripMap: Network/Request Error (radius endpoint)`);
+        apiLogger.error(`[API ERROR DETAILS] Error Type: ${errorType} | Error Code: ${errorCode} | Message: ${errorMessage}`);
+        apiLogger.error(`[API ERROR DETAILS] Request URL: ${requestUrl.replace(apiKey, 'API_KEY_HIDDEN')}`);
+        apiLogger.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
         data = {};
       }
       
@@ -519,17 +520,17 @@ export async function fetchNearbyPlacesWithSources(
         } catch {
           errorText = "Could not read error response";
         }
-        console.error(`[API FAIL] OpenTripMap: HTTP Error ${response.status} ${response.statusText} (radius endpoint)`);
-        console.error(`[API ERROR DETAILS] Status Code: ${response.status} | Status Text: ${response.statusText}`);
-        console.error(`[API ERROR DETAILS] Response: ${errorText.substring(0, 500)}`);
-        console.error(`[API ERROR DETAILS] Request URL: ${requestUrl.replace(apiKey, 'API_KEY_HIDDEN')}`);
-        console.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
+        apiLogger.error(`[API FAIL] OpenTripMap: HTTP Error ${response.status} ${response.statusText} (radius endpoint)`);
+        apiLogger.error(`[API ERROR DETAILS] Status Code: ${response.status} | Status Text: ${response.statusText}`);
+        apiLogger.error(`[API ERROR DETAILS] Response: ${errorText.substring(0, 500)}`);
+        apiLogger.error(`[API ERROR DETAILS] Request URL: ${requestUrl.replace(apiKey, 'API_KEY_HIDDEN')}`);
+        apiLogger.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
         if (response.status === 401) {
-          console.error(`[API ERROR DETAILS] Likely Cause: Invalid or missing API key. Check OPENTRIPMAP_API_KEY in .env`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Invalid or missing API key. Check OPENTRIPMAP_API_KEY in .env`);
         } else if (response.status === 429) {
-          console.error(`[API ERROR DETAILS] Likely Cause: Rate limit exceeded`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Rate limit exceeded`);
         } else if (response.status === 400) {
-          console.error(`[API ERROR DETAILS] Likely Cause: Invalid request parameters`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Invalid request parameters`);
         }
         // Don't throw - fall through to use Nominatim or fallback
         data = {};
@@ -541,18 +542,18 @@ export async function fetchNearbyPlacesWithSources(
             data = JSON.parse(responseText);
             // Check if response contains an error even with 200 status
             if (data && typeof data === 'object' && data.error) {
-              console.error(`[API FAIL] OpenTripMap: Error in response body (radius endpoint, status 200)`);
-              console.error(`[API ERROR DETAILS] Error: ${data.error} | Message: ${data.message || "No message"}`);
+              apiLogger.error(`[API FAIL] OpenTripMap: Error in response body (radius endpoint, status 200)`);
+              apiLogger.error(`[API ERROR DETAILS] Error: ${data.error} | Message: ${data.message || "No message"}`);
             }
           } catch (parseError: any) {
-            console.error(`[API FAIL] OpenTripMap: JSON Parse Error (radius endpoint)`);
-            console.error(`[API ERROR DETAILS] Error Type: ${parseError.name || "JSONParseError"} | Message: ${parseError.message || "Invalid JSON"}`);
-            console.error(`[API ERROR DETAILS] Response Text (first 500 chars): ${responseText.substring(0, 500)}`);
+            apiLogger.error(`[API FAIL] OpenTripMap: JSON Parse Error (radius endpoint)`);
+            apiLogger.error(`[API ERROR DETAILS] Error Type: ${parseError.name || "JSONParseError"} | Message: ${parseError.message || "Invalid JSON"}`);
+            apiLogger.error(`[API ERROR DETAILS] Response Text (first 500 chars): ${responseText.substring(0, 500)}`);
             data = {};
           }
         } catch (readError: any) {
-          console.error(`[API FAIL] OpenTripMap: Error reading response (radius endpoint)`);
-          console.error(`[API ERROR DETAILS] Error Type: ${readError.name || "ReadError"} | Message: ${readError.message || "Could not read response"}`);
+          apiLogger.error(`[API FAIL] OpenTripMap: Error reading response (radius endpoint)`);
+          apiLogger.error(`[API ERROR DETAILS] Error Type: ${readError.name || "ReadError"} | Message: ${readError.message || "Could not read response"}`);
           data = {};
         }
       }
@@ -563,15 +564,15 @@ export async function fetchNearbyPlacesWithSources(
   if (data && typeof data === 'object' && data.error) {
     const errorMsg = data.error === "null" ? "null error" : data.error;
     const errorMessage = data.message || data.error_message || "";
-    console.error(`[API FAIL] OpenTripMap: API Error Response`);
-    console.error(`[API ERROR DETAILS] Error: ${errorMsg} | Message: ${errorMessage || "No message"}`);
-    console.error(`[API ERROR DETAILS] Full Response: ${JSON.stringify(data).substring(0, 500)}`);
+    apiLogger.error(`[API FAIL] OpenTripMap: API Error Response`);
+    apiLogger.error(`[API ERROR DETAILS] Error: ${errorMsg} | Message: ${errorMessage || "No message"}`);
+    apiLogger.error(`[API ERROR DETAILS] Full Response: ${JSON.stringify(data).substring(0, 500)}`);
     if (errorMsg === "null" || errorMsg === null) {
-      console.error(`[API ERROR DETAILS] Likely Cause: Invalid API key or request parameters. Check OPENTRIPMAP_API_KEY in .env`);
+      apiLogger.error(`[API ERROR DETAILS] Likely Cause: Invalid API key or request parameters. Check OPENTRIPMAP_API_KEY in .env`);
     }
     // Mark as failed and skip in future calls
     failedApisSet.add("opentripmap");
-    console.log(`[API] Marking OpenTripMap as failed - will skip in future calls`);
+    apiLogger.log(`[API] Marking OpenTripMap as failed - will skip in future calls`);
     // Don't return here - let it fall through to check if we have other sources
     data = null;
   }
@@ -589,7 +590,7 @@ export async function fetchNearbyPlacesWithSources(
     features = data.features;
   } else if (data && typeof data === 'object' && Object.keys(data).length === 0) {
     // Empty object response - API might not have results or endpoint doesn't work
-    console.log(`[API FAIL] OpenTripMap returned empty object`);
+    apiLogger.log(`[API FAIL] OpenTripMap returned empty object`);
     // Don't return here - let it fall through to check if we have other sources
   } else if (!data) {
     // Data is null/undefined - already logged error above
@@ -597,13 +598,13 @@ export async function fetchNearbyPlacesWithSources(
   
   if (features.length === 0) {
     if (data) {
-      console.log(`[API FAIL] OpenTripMap returned no features:`, JSON.stringify(data).substring(0, 200));
+      apiLogger.log(`[API FAIL] OpenTripMap returned no features:`, JSON.stringify(data).substring(0, 200));
     } else {
-      console.log(`[API FAIL] OpenTripMap returned no features (data is null/undefined)`);
+      apiLogger.log(`[API FAIL] OpenTripMap returned no features (data is null/undefined)`);
     }
     // Don't return here - let it fall through to check if we have other sources
   } else {
-    console.log(`[API SUCCESS] OpenTripMap returned ${features.length} features`);
+    apiLogger.log(`[API SUCCESS] OpenTripMap returned ${features.length} features`);
   }
 
   // Filter and normalize places
@@ -655,9 +656,9 @@ export async function fetchNearbyPlacesWithSources(
 
   // If filtering resulted in no places, use fallback
   if (places.length === 0) {
-    console.log(`[API FAIL] OpenTripMap filtering resulted in 0 places`);
+    apiLogger.log(`[API FAIL] OpenTripMap filtering resulted in 0 places`);
     if (!geoapifySuccess && !nominatimSuccess) {
-      console.log(`[FALLBACK] All APIs failed, using hardcoded list`);
+      apiLogger.log(`[FALLBACK] All APIs failed, using hardcoded list`);
       fallbackPlaces = generateFallbackPlaces(lat, lon, radiusKm);
       apiSources.push("fallback");
       primarySource = "fallback";
@@ -672,7 +673,7 @@ export async function fetchNearbyPlacesWithSources(
       };
     }
   } else {
-    console.log(`[API SUCCESS] OpenTripMap filtering resulted in ${places.length} places`);
+    apiLogger.log(`[API SUCCESS] OpenTripMap filtering resulted in ${places.length} places`);
     if (!apiSources.includes("opentripmap")) {
       apiSources.push("opentripmap");
     }
@@ -688,7 +689,7 @@ export async function fetchNearbyPlacesWithSources(
   }
 
   if (allPlaces.length > opentripmapPlaces.length) {
-    console.log(`[MERGE] Combining results: OpenTripMap(${opentripmapPlaces.length}) + Geoapify(${geoapifyPlaces.length}) + Nominatim(${nominatimPlaces.length}) = ${allPlaces.length} total`);
+    apiLogger.log(`[MERGE] Combining results: OpenTripMap(${opentripmapPlaces.length}) + Geoapify(${geoapifyPlaces.length}) + Nominatim(${nominatimPlaces.length}) = ${allPlaces.length} total`);
     // Remove duplicates by name (keep closest)
     const uniquePlaces = new Map<string, Place>();
     for (const place of allPlaces) {
@@ -698,7 +699,7 @@ export async function fetchNearbyPlacesWithSources(
       }
     }
     const merged = Array.from(uniquePlaces.values()).sort((a, b) => a.distanceKm - b.distanceKm);
-    console.log(`[MERGE] After deduplication: ${merged.length} unique places`);
+    apiLogger.log(`[MERGE] After deduplication: ${merged.length} unique places`);
     
     // Determine primary source
     if (geoapifyPlaces.length >= nominatimPlaces.length && geoapifyPlaces.length >= opentripmapPlaces.length) {
@@ -751,7 +752,7 @@ async function fetchPlacesFromNominatim(
   
   // Skip if already marked as failed
   if (failedApis?.has("nominatim")) {
-    console.log(`[API] Skipping Nominatim - already failed`);
+    apiLogger.log(`[API] Skipping Nominatim - already failed`);
     return [];
   }
   
@@ -789,17 +790,17 @@ async function fetchPlacesFromNominatim(
         const errorType = fetchError.name || "Unknown";
         const errorMessage = fetchError.message || "No error message";
         const errorCode = fetchError.code || "N/A";
-        console.error(`[API FAIL] Nominatim: Network/Request Error (search for ${settlementType})`);
-        console.error(`[API ERROR DETAILS] Error Type: ${errorType} | Error Code: ${errorCode} | Message: ${errorMessage}`);
-        console.error(`[API ERROR DETAILS] Request URL: ${requestUrl}`);
-        console.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km | Settlement Type: ${settlementType}`);
+        apiLogger.error(`[API FAIL] Nominatim: Network/Request Error (search for ${settlementType})`);
+        apiLogger.error(`[API ERROR DETAILS] Error Type: ${errorType} | Error Code: ${errorCode} | Message: ${errorMessage}`);
+        apiLogger.error(`[API ERROR DETAILS] Request URL: ${requestUrl}`);
+        apiLogger.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km | Settlement Type: ${settlementType}`);
         if (fetchError.stack) {
-          console.error(`[API ERROR DETAILS] Stack (first 500 chars): ${fetchError.stack.substring(0, 500)}`);
+          apiLogger.error(`[API ERROR DETAILS] Stack (first 500 chars): ${fetchError.stack.substring(0, 500)}`);
         }
         if (errorCode === "ECONNREFUSED") {
-          console.error(`[API ERROR DETAILS] Likely Cause: Connection refused - Nominatim server may be down or unreachable`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Connection refused - Nominatim server may be down or unreachable`);
         } else if (errorCode === "ETIMEDOUT") {
-          console.error(`[API ERROR DETAILS] Likely Cause: Request timeout - Nominatim server is slow or overloaded`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Request timeout - Nominatim server is slow or overloaded`);
         }
         continue;
       }
@@ -811,19 +812,19 @@ async function fetchPlacesFromNominatim(
         } catch {
           errorText = "Could not read error response";
         }
-        console.error(`[API FAIL] Nominatim: HTTP Error ${response.status} ${response.statusText} (search for ${settlementType})`);
-        console.error(`[API ERROR DETAILS] Status Code: ${response.status} | Status Text: ${response.statusText}`);
-        console.error(`[API ERROR DETAILS] Response: ${errorText.substring(0, 500)}`);
-        console.error(`[API ERROR DETAILS] Request URL: ${requestUrl}`);
-        console.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
+        apiLogger.error(`[API FAIL] Nominatim: HTTP Error ${response.status} ${response.statusText} (search for ${settlementType})`);
+        apiLogger.error(`[API ERROR DETAILS] Status Code: ${response.status} | Status Text: ${response.statusText}`);
+        apiLogger.error(`[API ERROR DETAILS] Response: ${errorText.substring(0, 500)}`);
+        apiLogger.error(`[API ERROR DETAILS] Request URL: ${requestUrl}`);
+        apiLogger.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
         if (response.status === 429) {
-          console.error(`[API ERROR DETAILS] Likely Cause: Rate limit exceeded. Nominatim requires 1 request per second.`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Rate limit exceeded. Nominatim requires 1 request per second.`);
         } else if (response.status === 403) {
-          console.error(`[API ERROR DETAILS] Likely Cause: Forbidden - User-Agent may be blocked or invalid`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Forbidden - User-Agent may be blocked or invalid`);
           // Mark as failed and return early - no point trying more calls
           if (failedApis) {
             failedApis.add("nominatim");
-            console.log(`[API] Marking Nominatim as failed (403 Forbidden) - will skip in future calls`);
+            apiLogger.log(`[API] Marking Nominatim as failed (403 Forbidden) - will skip in future calls`);
           }
           return [];
         }
@@ -944,7 +945,7 @@ async function fetchPlacesFromNominatim(
     // Limit grid points to avoid too many requests (max 10)
     // Skip reverse geocoding if Nominatim already failed
     if (failedApis?.has("nominatim")) {
-      console.log(`[API] Skipping Nominatim reverse geocoding - already failed`);
+      apiLogger.log(`[API] Skipping Nominatim reverse geocoding - already failed`);
       return places;
     }
     
@@ -972,13 +973,13 @@ async function fetchPlacesFromNominatim(
         const errorType = fetchError.name || "Unknown";
         const errorMessage = fetchError.message || "No error message";
         const errorCode = fetchError.code || "N/A";
-        console.error(`[API FAIL] Nominatim: Network/Request Error (reverse geocode for ${point.lat},${point.lon})`);
-        console.error(`[API ERROR DETAILS] Error Type: ${errorType} | Error Code: ${errorCode} | Message: ${errorMessage}`);
-        console.error(`[API ERROR DETAILS] Request URL: ${requestUrl}`);
+        apiLogger.error(`[API FAIL] Nominatim: Network/Request Error (reverse geocode for ${point.lat},${point.lon})`);
+        apiLogger.error(`[API ERROR DETAILS] Error Type: ${errorType} | Error Code: ${errorCode} | Message: ${errorMessage}`);
+        apiLogger.error(`[API ERROR DETAILS] Request URL: ${requestUrl}`);
         if (errorCode === "ECONNREFUSED") {
-          console.error(`[API ERROR DETAILS] Likely Cause: Connection refused - Nominatim server may be down or unreachable`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Connection refused - Nominatim server may be down or unreachable`);
         } else if (errorCode === "ETIMEDOUT") {
-          console.error(`[API ERROR DETAILS] Likely Cause: Request timeout - Nominatim server is slow or overloaded`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Request timeout - Nominatim server is slow or overloaded`);
         }
         continue;
       }
@@ -990,17 +991,17 @@ async function fetchPlacesFromNominatim(
         } catch {
           errorText = "Could not read error response";
         }
-        console.error(`[API FAIL] Nominatim: HTTP Error ${response.status} ${response.statusText} (reverse geocode for ${point.lat},${point.lon})`);
-        console.error(`[API ERROR DETAILS] Status Code: ${response.status} | Status Text: ${response.statusText}`);
-        console.error(`[API ERROR DETAILS] Response: ${errorText.substring(0, 200)}`);
+        apiLogger.error(`[API FAIL] Nominatim: HTTP Error ${response.status} ${response.statusText} (reverse geocode for ${point.lat},${point.lon})`);
+        apiLogger.error(`[API ERROR DETAILS] Status Code: ${response.status} | Status Text: ${response.statusText}`);
+        apiLogger.error(`[API ERROR DETAILS] Response: ${errorText.substring(0, 200)}`);
         if (response.status === 429) {
-          console.error(`[API ERROR DETAILS] Likely Cause: Rate limit exceeded. Nominatim requires 1 request per second.`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Rate limit exceeded. Nominatim requires 1 request per second.`);
         } else if (response.status === 403) {
-          console.error(`[API ERROR DETAILS] Likely Cause: Forbidden - User-Agent may be blocked or invalid`);
+          apiLogger.error(`[API ERROR DETAILS] Likely Cause: Forbidden - User-Agent may be blocked or invalid`);
           // Mark as failed and break out of loop
           if (failedApis) {
             failedApis.add("nominatim");
-            console.log(`[API] Marking Nominatim as failed (403 Forbidden) - will skip in future calls`);
+            apiLogger.log(`[API] Marking Nominatim as failed (403 Forbidden) - will skip in future calls`);
           }
           break; // Exit the reverse geocoding loop
         }
@@ -1085,8 +1086,8 @@ async function fetchPlacesFromNominatim(
     } catch (error: any) {
       const errorType = error?.name || "UnknownError";
       const errorMessage = error?.message || "No error message";
-      console.error(`[API FAIL] Nominatim: Unexpected Exception (reverse geocode for ${point.lat},${point.lon})`);
-      console.error(`[API ERROR DETAILS] Error Type: ${errorType} | Message: ${errorMessage}`);
+      apiLogger.error(`[API FAIL] Nominatim: Unexpected Exception (reverse geocode for ${point.lat},${point.lon})`);
+      apiLogger.error(`[API ERROR DETAILS] Error Type: ${errorType} | Message: ${errorMessage}`);
       continue;
     }
   }
@@ -1115,8 +1116,8 @@ async function fetchPlacesFromGeoapify(
   apiKey: string
 ): Promise<Place[]> {
   if (!apiKey) {
-    console.error(`[API FAIL] Geoapify: API key not provided`);
-    console.error(`[API ERROR DETAILS] Error Type: Missing API Key | Location: ${lat},${lon} | Radius: ${radiusKm}km`);
+    apiLogger.error(`[API FAIL] Geoapify: API key not provided`);
+    apiLogger.error(`[API ERROR DETAILS] Error Type: Missing API Key | Location: ${lat},${lon} | Radius: ${radiusKm}km`);
     return [];
   }
 
@@ -1137,7 +1138,7 @@ async function fetchPlacesFromGeoapify(
 
     const requestUrl = url.toString();
     const sanitizedUrl = requestUrl.replace(apiKey, 'API_KEY_HIDDEN');
-    console.log(`[API] Geoapify request: ${sanitizedUrl}`);
+    apiLogger.debug(`[API] Geoapify request: ${sanitizedUrl}`);
     
     let response: Response;
     let responseText: string = "";
@@ -1169,21 +1170,21 @@ async function fetchPlacesFromGeoapify(
         errorDetails = responseText.substring(0, 500);
       }
       
-      console.error(`[API FAIL] Geoapify: HTTP Error ${response.status} ${response.statusText}`);
-      console.error(`[API ERROR DETAILS] Status Code: ${response.status} | Status Text: ${response.statusText}`);
-      console.error(`[API ERROR DETAILS] Response: ${errorDetails}`);
-      console.error(`[API ERROR DETAILS] Request URL: ${sanitizedUrl}`);
-      console.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
+      apiLogger.error(`[API FAIL] Geoapify: HTTP Error ${response.status} ${response.statusText}`);
+      apiLogger.error(`[API ERROR DETAILS] Status Code: ${response.status} | Status Text: ${response.statusText}`);
+      apiLogger.error(`[API ERROR DETAILS] Response: ${errorDetails}`);
+      apiLogger.error(`[API ERROR DETAILS] Request URL: ${sanitizedUrl}`);
+      apiLogger.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
       
       // Provide specific guidance based on status code
       if (response.status === 401) {
-        console.error(`[API ERROR DETAILS] Likely Cause: Invalid or missing API key. Check GEOAPIFY_API_KEY in .env`);
+        apiLogger.error(`[API ERROR DETAILS] Likely Cause: Invalid or missing API key. Check GEOAPIFY_API_KEY in .env`);
       } else if (response.status === 429) {
-        console.error(`[API ERROR DETAILS] Likely Cause: Rate limit exceeded. Too many requests.`);
+        apiLogger.error(`[API ERROR DETAILS] Likely Cause: Rate limit exceeded. Too many requests.`);
       } else if (response.status === 400) {
-        console.error(`[API ERROR DETAILS] Likely Cause: Invalid request parameters (categories, filter, etc.)`);
+        apiLogger.error(`[API ERROR DETAILS] Likely Cause: Invalid request parameters (categories, filter, etc.)`);
       } else if (response.status >= 500) {
-        console.error(`[API ERROR DETAILS] Likely Cause: Geoapify server error. Try again later.`);
+        apiLogger.error(`[API ERROR DETAILS] Likely Cause: Geoapify server error. Try again later.`);
       }
       
       return [];
@@ -1192,8 +1193,8 @@ async function fetchPlacesFromGeoapify(
     try {
       responseData = JSON.parse(responseText);
     } catch (parseError: any) {
-      console.error(`[API FAIL] Geoapify: JSON Parse Error`);
-      console.error(`[API ERROR DETAILS] Error Type: ${parseError.name || "JSONParseError"} | Message: ${parseError.message || "Invalid JSON response"}`);
+      apiLogger.error(`[API FAIL] Geoapify: JSON Parse Error`);
+      apiLogger.error(`[API ERROR DETAILS] Error Type: ${parseError.name || "JSONParseError"} | Message: ${parseError.message || "Invalid JSON response"}`);
       console.error(`[API ERROR DETAILS] Response Text (first 500 chars): ${responseText.substring(0, 500)}`);
       console.error(`[API ERROR DETAILS] Status Code: ${response.status}`);
       return [];
@@ -1534,10 +1535,10 @@ async function fetchPlacesFromGeoapify(
     const errorMessage = error?.message || "No error message";
     const errorStack = error?.stack || "No stack trace";
     
-    console.error(`[API FAIL] Geoapify: Unexpected Exception`);
-    console.error(`[API ERROR DETAILS] Error Type: ${errorType} | Message: ${errorMessage}`);
-    console.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
-    console.error(`[API ERROR DETAILS] Stack (first 1000 chars): ${errorStack.substring(0, 1000)}`);
+    apiLogger.error(`[API FAIL] Geoapify: Unexpected Exception`);
+    apiLogger.error(`[API ERROR DETAILS] Error Type: ${errorType} | Message: ${errorMessage}`);
+    apiLogger.error(`[API ERROR DETAILS] Location: ${lat},${lon} | Radius: ${radiusKm}km`);
+    apiLogger.error(`[API ERROR DETAILS] Stack (first 1000 chars): ${errorStack.substring(0, 1000)}`);
     
     // Check for specific error types
     if (errorType === "TypeError" && errorMessage.includes("fetch")) {

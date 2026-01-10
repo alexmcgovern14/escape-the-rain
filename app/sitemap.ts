@@ -1,7 +1,8 @@
 import { MetadataRoute } from 'next'
+import { env } from '@/lib/env'
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://escapetherain.com'
+  const baseUrl = env.baseUrl
   
   return [
     {

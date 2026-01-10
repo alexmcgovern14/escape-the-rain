@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { enrichPlaceWithPOIs } from "@/lib/places";
+import { env } from "@/lib/env";
 
 // Force dynamic rendering - this route should never be statically generated
 export const dynamic = 'force-dynamic';
@@ -120,13 +121,7 @@ const SAMPLE_LOCATIONS = [
 ];
 
 export async function GET(request: NextRequest) {
-  const apiKey = process.env.GEOAPIFY_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "GEOAPIFY_API_KEY environment variable not set" },
-      { status: 500 }
-    );
-  }
+  const apiKey = env.geoapifyApiKey;
 
   console.log(`Calculating POI baselines for ${SAMPLE_LOCATIONS.length} locations...\n`);
 

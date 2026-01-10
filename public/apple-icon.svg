@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" fill="none">
+  <rect width="180" height="180" fill="#ffffff" rx="40"/>
+  <g transform="translate(90, 90)">
+    <circle cx="0" cy="0" r="70" fill="#fbbf24" stroke="#f59e0b" stroke-width="4"/>
+    <line x1="0" y1="-100" x2="0" y2="-110" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="0" y1="100" x2="0" y2="110" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="-100" y1="0" x2="-110" y2="0" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="100" y1="0" x2="110" y2="0" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="-70.71" y1="-70.71" x2="-77.78" y2="-77.78" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="70.71" y1="70.71" x2="77.78" y2="77.78" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="70.71" y1="-70.71" x2="77.78" y2="-77.78" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+    <line x1="-70.71" y1="70.71" x2="-77.78" y2="77.78" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>
+

@@ -9,6 +9,7 @@ import Footer from "@/components/Footer";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import type { RecommendationResponse } from "@/lib/types";
 import { getUserWeatherStatus, type UserWeatherStatus } from "@/lib/weather";
+import { clientLogger, poiLogger } from "@/lib/logger";
 
 // Dynamically import MapView to avoid SSR issues with Mapbox
 const MapView = dynamic(() => import("@/components/MapView"), {
@@ -65,7 +66,7 @@ export default function Home() {
           const weatherStatus = await getUserWeatherStatus(lat, lon);
           setUserWeather(weatherStatus);
         } catch (error) {
-          console.error("Failed to fetch user weather status:", error);
+          clientLogger.error("Failed to fetch user weather status:", error);
           // Don't block the UI if weather fetch fails
         }
 
@@ -83,7 +84,7 @@ export default function Home() {
         // Batch all places into a single API call for maximum speed
         if (result.recommendations && result.recommendations.length > 0) {
           setPoiLoading(true);
-          console.log("[POI] Starting async POI fetch for", result.recommendations.length, "places...");
+          poiLogger.log("Starting async POI fetch for", result.recommendations.length, "places...");
           
           // Batch all places into a single API call - much faster than individual calls
           const places = result.recommendations.map((rec) => ({
@@ -102,14 +103,14 @@ export default function Home() {
             .then(async (response) => {
               if (!response.ok) {
                 const errorText = await response.text();
-                console.error("[POI] POI API error:", response.status, response.statusText, errorText);
+                poiLogger.error("POI API error:", response.status, response.statusText, errorText);
                 setPoiLoading(false);
                 return;
               }
 
               const poiResult = await response.json();
               if (poiResult.places && Array.isArray(poiResult.places)) {
-                console.log(`[POI] Received POI data for ${poiResult.places.length} places`);
+                poiLogger.log(`Received POI data for ${poiResult.places.length} places`);
                 
                 // Update all places at once in a single state update - faster and all pills appear together
                 setData((currentData) => {
@@ -150,7 +151,7 @@ export default function Home() {
                     }
                     
                     if (poiData) {
-                      console.log(`[POI] ✓ Updating ${r.place.name} with ${poiData.nearbyPOIs.length} POIs`);
+                      poiLogger.debug(`✓ Updating ${r.place.name} with ${poiData.nearbyPOIs.length} POIs`);
                       return {
                         ...r,
                         place: {
@@ -172,12 +173,12 @@ export default function Home() {
               setPoiLoading(false);
             })
             .catch((error) => {
-              console.error("[POI] Error fetching POI data:", error);
+              poiLogger.error("Error fetching POI data:", error);
               setPoiLoading(false);
             });
         }
       } catch (error) {
-        console.error("Error fetching recommendations:", error);
+        clientLogger.error("Error fetching recommendations:", error);
         setStatus("error");
         setStatusMessage("Failed to fetch recommendations. Please try again.");
         setData(null);

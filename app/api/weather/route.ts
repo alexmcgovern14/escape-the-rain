@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { checkWeatherAtLocation } from "@/lib/weather";
+import { apiLogger } from "@/lib/logger";
 
 // Force dynamic rendering - API routes should never be statically generated
 export const dynamic = 'force-dynamic';
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
     const weather = await checkWeatherAtLocation(latitude, longitude);
     return NextResponse.json(weather);
   } catch (error) {
-    console.error("Weather check error:", error);
+    apiLogger.error("Weather check error:", error);
     return NextResponse.json(
       { error: "Failed to check weather" },
       { status: 500 }

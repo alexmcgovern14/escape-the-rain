@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enrichPlaceWithPOIs } from "@/lib/places";
+import { poiLogger } from "@/lib/logger";
+import { env } from "@/lib/env";
 
 // Force dynamic rendering - API routes should never be statically generated
 export const dynamic = 'force-dynamic';
@@ -20,13 +22,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const geoapifyApiKey = process.env.GEOAPIFY_API_KEY;
-    if (!geoapifyApiKey) {
-      return NextResponse.json(
-        { error: "Geoapify API key not configured" },
-        { status: 500 }
-      );
-    }
+    const geoapifyApiKey = env.geoapifyApiKey;
 
     // Enrich all places with POI data in parallel
     const enrichedPlaces = await Promise.all(
@@ -46,7 +42,7 @@ export async function POST(request: NextRequest) {
             poiSummary: poiData.poiSummary,
           };
         } catch (error) {
-          console.error(`[POI] Error enriching ${place.name}:`, error);
+          poiLogger.error(`Error enriching ${place.name}:`, error);
           return {
             lat: place.lat,
             lon: place.lon,
@@ -60,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ places: enrichedPlaces });
   } catch (error) {
-    console.error("[POI] Error in POI enrichment endpoint:", error);
+    poiLogger.error("Error in POI enrichment endpoint:", error);
     return NextResponse.json(
       { error: "Failed to enrich places with POI data" },
       { status: 500 }
