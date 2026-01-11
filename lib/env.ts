@@ -62,9 +62,14 @@ function validateEnv(): EnvConfig {
 /**
  * Get validated environment configuration
  * Call this at the top level of server-side code to fail fast if env vars are missing
+ * 
+ * Note: In Vercel, environment variables are available at runtime.
+ * If you add new environment variables, you need to redeploy for them to take effect.
  */
 export function getEnv(): EnvConfig {
-  // Cache the validated config
+  // Cache the validated config to avoid re-validation on every access
+  // This cache is per-server-instance, so it's safe for serverless functions
+  // Note: In Vercel, if you add environment variables, you MUST redeploy for them to be available
   if (!globalThis.__envConfig) {
     globalThis.__envConfig = validateEnv();
   }
