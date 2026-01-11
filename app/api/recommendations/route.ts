@@ -95,11 +95,11 @@ export async function GET(request: NextRequest) {
     geoapifyApiKey = env.geoapifyApiKey;
   } catch (envError: any) {
     // If env validation fails, return a user-friendly error
+    // Log the full error server-side, but don't expose details to client
     apiLogger.error("Environment configuration error:", envError);
     return NextResponse.json(
       { 
-        error: "Service configuration error. Please contact support.",
-        details: envError?.message || "Missing required API keys"
+        error: "Service configuration error. Please contact support."
       },
       { status: 500 }
     );

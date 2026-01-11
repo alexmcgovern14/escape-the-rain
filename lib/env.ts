@@ -50,15 +50,9 @@ function validateEnv(): EnvConfig {
   config.VERCEL_ENV = process.env.VERCEL_ENV;
 
   if (missing.length > 0) {
-    const errorMessage = `
-Missing required environment variables:
-${missing.map((key) => `  - ${key}`).join("\n")}
-
-Please ensure these are set in your .env file or environment configuration.
-For local development, create a .env.local file with:
-${missing.map((key) => `${key}=your_${key.toLowerCase()}_here`).join("\n")}
-    `.trim();
-
+    // Don't expose detailed error messages - just throw a generic error
+    // Detailed messages should only be logged server-side, not exposed to clients
+    const errorMessage = `Missing required environment variables: ${missing.join(", ")}`;
     throw new Error(errorMessage);
   }
 
