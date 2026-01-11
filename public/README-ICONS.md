@@ -45,3 +45,5 @@ If you prefer to generate icons manually or use online tools:
 
 All icons use a sun icon design with yellow/golden colors (#fbbf24, #f59e0b) on white backgrounds.
 
+
+
