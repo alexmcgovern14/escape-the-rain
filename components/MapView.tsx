@@ -7,7 +7,6 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { MapPin } from "lucide-react";
 import type { Recommendation } from "@/lib/types";
 import { MAP_CONFIG, ANIMATION_DURATIONS } from "@/lib/constants";
-import { env } from "@/lib/env";
 import { clientLogger } from "@/lib/logger";
 
 type MapViewProps = {
@@ -16,7 +15,9 @@ type MapViewProps = {
 };
 
 export default function MapView({ userLocation, recommendations }: MapViewProps) {
-  const apiKey = env.mapboxAccessToken;
+  // Access NEXT_PUBLIC_* variables directly - they're available in client components
+  // Don't use env.mapboxAccessToken here as it triggers validation of ALL env vars
+  const apiKey = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || "";
   const [selectedPlace, setSelectedPlace] = useState<string | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const mapRef = useRef<MapRef>(null);

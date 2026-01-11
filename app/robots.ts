@@ -1,8 +1,8 @@
 import { MetadataRoute } from 'next'
-import { env } from '@/lib/env'
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = env.baseUrl
+  // Access NEXT_PUBLIC_* variables directly to avoid triggering validation of server-only env vars
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://escapetherain.com"
   
   return {
     rules: {
