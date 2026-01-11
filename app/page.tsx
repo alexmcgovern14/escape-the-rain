@@ -232,8 +232,26 @@ export default function Home() {
         }
       } catch (error) {
         clientLogger.error("Error fetching recommendations:", error);
-        setStatus("error");
-        setStatusMessage("Failed to fetch recommendations. Please try again.");
+        
+        // Extract error message from the error
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorDetails = (error as any)?.details;
+        
+        // Check if error is about missing environment variables (configuration issue)
+        if (errorMessage.includes("Service configuration error") || 
+            errorMessage.includes("Missing required environment variables") || 
+            errorMessage.includes("GEOAPIFY_API_KEY") || 
+            errorMessage.includes("OPENTRIPMAP_API_KEY")) {
+          setStatus("error");
+          setStatusMessage("Service configuration error. Please contact support.");
+        } else if (errorDetails) {
+          setStatus("error");
+          setStatusMessage(errorDetails);
+        } else {
+          setStatus("error");
+          setStatusMessage("Failed to fetch recommendations. Please try again.");
+        }
+        
         setData(null);
         setIsExiting(false);
         // Reset to empty state on error

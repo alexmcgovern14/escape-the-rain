@@ -87,8 +87,23 @@ export async function GET(request: NextRequest) {
     );
   }
 
-    const apiKey = env.opentripmapApiKey;
-    const geoapifyApiKey = env.geoapifyApiKey;
+  // Validate environment variables early and return user-friendly error
+  let apiKey: string;
+  let geoapifyApiKey: string;
+  try {
+    apiKey = env.opentripmapApiKey;
+    geoapifyApiKey = env.geoapifyApiKey;
+  } catch (envError: any) {
+    // If env validation fails, return a user-friendly error
+    apiLogger.error("Environment configuration error:", envError);
+    return NextResponse.json(
+      { 
+        error: "Service configuration error. Please contact support.",
+        details: envError?.message || "Missing required API keys"
+      },
+      { status: 500 }
+    );
+  }
 
   try {
     // Step 1: Check local weather for next 12 hours
