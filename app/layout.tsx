@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { env } from "@/lib/env";
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -22,7 +21,7 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  metadataBase: new URL(env.baseUrl),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || "https://escapetherain.com"),
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },
