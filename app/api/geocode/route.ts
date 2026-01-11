@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     // Try Open-Meteo first (primary source)
     const url = new URL(GEOCODING_BASE_URL);
     url.searchParams.set("name", query.trim());
-    url.searchParams.set("count", "30"); // Increased from 10 to 30
+    url.searchParams.set("count", "20"); // Reduced for faster response
     url.searchParams.set("language", "en");
     url.searchParams.set("format", "json");
     url.searchParams.set("country_codes", "gb"); // Limit to UK only
@@ -42,13 +42,38 @@ export async function GET(request: NextRequest) {
 
     let results: GeocodeResult[] = [];
 
-    // Process Open-Meteo results
+    // Settlement feature codes from Open-Meteo (populated places only)
+    const settlementFeatureCodes = [
+      "PPL",      // Populated place
+      "PPLA",     // Seat of a first-order administrative division
+      "PPLA2",    // Seat of a second-order administrative division
+      "PPLA3",    // Seat of a third-order administrative division
+      "PPLA4",    // Seat of a fourth-order administrative division
+      "PPLC",     // Capital
+      "PPLF",     // Farm village
+      "PPLG",     // Seat of government
+      "PPLH",     // Historical capital
+      "PPLL",     // Populated locality
+      "PPLQ",     // Abandoned populated place
+      "PPLR",     // Religious populated place
+      "PPLS",     // Populated places
+      "PPLW",     // Destroyed populated place
+      "PPLX",     // Section of populated place
+    ];
+
+    // Process Open-Meteo results - filter to settlements only
     if (data.results && data.results.length > 0) {
       results = data.results
         .filter((result: any) => {
-          // Filter to UK only - check country code or country name
+          // Filter to UK only
           const country = (result.country_code || result.country || "").toLowerCase();
-          return country === "gb" || country === "uk" || country === "united kingdom" || country === "great britain";
+          const isUK = country === "gb" || country === "uk" || country === "united kingdom" || country === "great britain";
+          
+          // Filter to settlements only (populated places)
+          const featureCode = (result.feature_code || "").toUpperCase();
+          const isSettlement = settlementFeatureCodes.includes(featureCode);
+          
+          return isUK && isSettlement;
         })
         .map((result: any) => ({
           name: result.name,
@@ -65,9 +90,11 @@ export async function GET(request: NextRequest) {
         const nominatimUrl = new URL("https://nominatim.openstreetmap.org/search");
         nominatimUrl.searchParams.set("q", `${query.trim()}, UK`);
         nominatimUrl.searchParams.set("format", "json");
-        nominatimUrl.searchParams.set("limit", "20");
+        nominatimUrl.searchParams.set("limit", "15"); // Reduced for faster response
         nominatimUrl.searchParams.set("countrycodes", "gb");
         nominatimUrl.searchParams.set("addressdetails", "1");
+        // Filter to settlements only: city, town, village, hamlet
+        nominatimUrl.searchParams.set("type", "city,town,village,hamlet");
 
         const nominatimResponse = await fetch(nominatimUrl.toString(), {
           headers: {
@@ -81,7 +108,18 @@ export async function GET(request: NextRequest) {
             .filter((result: any) => {
               // Filter to UK only
               const country = (result.address?.country_code || "").toLowerCase();
-              return country === "gb" || country === "uk";
+              const isUK = country === "gb" || country === "uk";
+              
+              // Filter to settlements only - check OSM type or address type
+              const osmType = (result.type || "").toLowerCase();
+              const addressType = (result.address?.place || result.address?.city || result.address?.town || result.address?.village || result.address?.hamlet || "").toLowerCase();
+              const isSettlement = 
+                osmType === "city" || osmType === "town" || osmType === "village" || osmType === "hamlet" ||
+                addressType === "city" || addressType === "town" || addressType === "village" || addressType === "hamlet" ||
+                // Also accept if it has a settlement-like name structure (no business indicators)
+                (!result.name.match(/\b(shop|store|restaurant|cafe|hotel|pub|bar|theatre|cinema|gallery|museum|library|school|hospital|clinic|pharmacy|bank|post office|station|airport)\b/i));
+              
+              return isUK && isSettlement;
             })
             .map((result: any) => ({
               name: result.display_name.split(",")[0], // Get primary name
@@ -96,7 +134,7 @@ export async function GET(request: NextRequest) {
           const newResults = nominatimResults.filter(
             (r) => !existingNames.has(r.name.toLowerCase())
           );
-          results = [...results, ...newResults].slice(0, 30); // Limit to 30 total
+          results = [...results, ...newResults].slice(0, 20); // Limit to 20 total
         }
       } catch (nominatimError) {
         apiLogger.error("Nominatim fallback error:", nominatimError);
@@ -115,7 +153,7 @@ export async function GET(request: NextRequest) {
       return true;
     });
 
-    return NextResponse.json({ results: deduplicatedResults.slice(0, 30) });
+    return NextResponse.json({ results: deduplicatedResults.slice(0, 20) });
   } catch (error) {
     apiLogger.error("Geocoding error:", error);
     return NextResponse.json(
