@@ -84,8 +84,18 @@ export default function Home() {
           async () => {
             const response = await fetch(url);
             if (!response.ok) {
-              const error: any = new Error(`API error: ${response.statusText}`);
+              // Try to get error details from response
+              let errorDetails = null;
+              try {
+                const errorData = await response.json();
+                errorDetails = errorData.error || errorData.details || response.statusText;
+              } catch {
+                errorDetails = response.statusText;
+              }
+              
+              const error: any = new Error(errorDetails || `API error: ${response.status}`);
               error.status = response.status;
+              error.details = errorDetails;
               throw error;
             }
             return response.json();
