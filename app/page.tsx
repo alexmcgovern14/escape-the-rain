@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import LocationSelector from "@/components/LocationSelector";
 import EmptyState from "@/components/EmptyState";
@@ -10,6 +10,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import type { RecommendationResponse } from "@/lib/types";
 import { getUserWeatherStatus, type UserWeatherStatus } from "@/lib/weather";
 import { clientLogger, poiLogger } from "@/lib/logger";
+import { retryWithBackoff, isRetryableError } from "@/lib/retry";
 
 // Dynamically import MapView to avoid SSR issues with Mapbox
 const MapView = dynamic(() => import("@/components/MapView"), {
@@ -33,8 +34,38 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [poiLoading, setPoiLoading] = useState(false);
   const [userWeather, setUserWeather] = useState<UserWeatherStatus | undefined>(undefined);
+  const [isOnline, setIsOnline] = useState(true);
+
+  // Network offline detection
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      clientLogger.log("Network connection restored");
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      clientLogger.warn("Network connection lost");
+    };
+
+    setIsOnline(navigator.onLine);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   const handleLocationSelect = async (lat: number, lon: number, source: "geolocation" | "manual", locationName?: string) => {
+    // Check network status
+    if (!isOnline) {
+      setStatus("error");
+      setStatusMessage("No internet connection. Please check your network and try again.");
+      setIsExiting(false);
+      return;
+    }
+
     // Trigger exit animation
     setIsExiting(true);
     setStatus("loading");
@@ -46,15 +77,25 @@ export default function Home() {
     setTimeout(async () => {
       try {
         const locationNameParam = locationName ? `&locationName=${encodeURIComponent(locationName)}` : "";
-        const response = await fetch(
-          `/api/recommendations?lat=${lat}&lon=${lon}&source=${source}&strictHours=${strictHours}&searchDistance=${searchDistance === "auto" ? "auto" : searchDistance}${locationNameParam}`
+        const url = `/api/recommendations?lat=${lat}&lon=${lon}&source=${source}&strictHours=${strictHours}&searchDistance=${searchDistance === "auto" ? "auto" : searchDistance}${locationNameParam}`;
+        
+        // Use retry logic for API call
+        const result: RecommendationResponse = await retryWithBackoff(
+          async () => {
+            const response = await fetch(url);
+            if (!response.ok) {
+              const error: any = new Error(`API error: ${response.statusText}`);
+              error.status = response.status;
+              throw error;
+            }
+            return response.json();
+          },
+          {
+            maxRetries: 3,
+            initialDelay: 1000,
+            retryable: isRetryableError,
+          }
         );
-
-        if (!response.ok) {
-          throw new Error(`API error: ${response.statusText}`);
-        }
-
-        const result: RecommendationResponse = await response.json();
         setData(result);
 
         // Set selected location display name
@@ -93,22 +134,34 @@ export default function Home() {
             name: rec.place.name,
           }));
 
-          fetch("/api/poi", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ places }),
-          })
-            .then(async (response) => {
+          // Use retry logic for POI API call
+          retryWithBackoff(
+            async () => {
+              const response = await fetch("/api/poi", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ places }),
+              });
+
               if (!response.ok) {
                 const errorText = await response.text();
-                poiLogger.error("POI API error:", response.status, response.statusText, errorText);
-                setPoiLoading(false);
-                return;
+                const error: any = new Error(`POI API error: ${response.statusText}`);
+                error.status = response.status;
+                error.responseText = errorText;
+                throw error;
               }
 
-              const poiResult = await response.json();
+              return response.json();
+            },
+            {
+              maxRetries: 2, // Fewer retries for POI (non-critical)
+              initialDelay: 1000,
+              retryable: isRetryableError,
+            }
+          )
+            .then((poiResult) => {
               if (poiResult.places && Array.isArray(poiResult.places)) {
                 poiLogger.log(`Received POI data for ${poiResult.places.length} places`);
                 

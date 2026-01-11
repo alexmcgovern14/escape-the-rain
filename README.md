@@ -24,6 +24,8 @@ Perfect for those rainy days when you want to escape to somewhere dry!
 - **API Logging**: Tracks which APIs return results for analysis and optimization
 - **Interactive Map**: Mapbox with POI markers and popups
 - **Responsive Design**: Works beautifully on desktop and mobile
+- **Network Resilience**: Automatic retry logic with exponential backoff for failed API calls
+- **Offline Detection**: Detects network connectivity and shows user-friendly error messages
 - **Zero Cost**: Uses free APIs (no paid services required)
 
 ## 🛠️ Tech Stack
