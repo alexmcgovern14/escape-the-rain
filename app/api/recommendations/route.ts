@@ -28,17 +28,25 @@ import type { RecommendationResponse, Place } from "@/lib/types";
 
 /**
  * Check if a place is a duplicate of any existing places
- * Checks by ID, name (case-insensitive), or close distance (< 5km)
+ * Checks by ID, name (case-insensitive), or close distance
+ * For same-name places: if they're within 15km of each other, consider duplicates
+ * This prevents the same town appearing twice with slightly different coordinates from different APIs
+ * Example: Chelmsford at 7.3km and 13.6km from user are likely the same place
  */
-function isDuplicatePlace(place: Place, existingPlaces: Place[]): boolean {
+function isDuplicatePlace(place: Place, existingPlaces: Place[], userLat?: number, userLon?: number): boolean {
   return existingPlaces.some(existing => {
     // Same ID
     if (existing.id === place.id) return true;
-    // Same name (case-insensitive) and very close (< 5km apart) - likely the same place
+    
+    // Same name (case-insensitive)
     const nameMatch = existing.name.toLowerCase().trim() === place.name.toLowerCase().trim();
     if (nameMatch) {
       const distanceBetween = haversineDistance(existing.lat, existing.lon, place.lat, place.lon);
-      if (distanceBetween < 5) return true; // Same place at slightly different coordinates
+      
+      // If places with same name are within 15km of each other, they're likely duplicates
+      // This catches cases where the same town appears with different coordinates from different APIs
+      // (e.g., Chelmsford at different distances from user but same actual location)
+      if (distanceBetween < 15) return true;
     }
     return false;
   });
@@ -342,6 +350,25 @@ export async function GET(request: NextRequest) {
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null && item.isDryToday)
+      // Deduplicate by name: if same name appears multiple times, keep only the closest one
+      // This prevents duplicates like "Chelmsford" appearing at 7km and 13km
+      .reduce((acc: Array<{place: Place; isDryToday: boolean; rainSummary: string; weather: any}>, item) => {
+        const existingIndex = acc.findIndex(existing => 
+          existing.place.name.toLowerCase().trim() === item.place.name.toLowerCase().trim()
+        );
+        if (existingIndex === -1) {
+          // First occurrence of this name, add it
+          acc.push(item);
+        } else {
+          // Same name already exists, keep the closer one
+          const existing = acc[existingIndex];
+          if (item.place.distanceKm < existing.place.distanceKm) {
+            acc[existingIndex] = item; // Replace with closer one
+          }
+          // Otherwise keep the existing (closer) one
+        }
+        return acc;
+      }, [])
       .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
       .slice(0, 5); // Take top 5
 
@@ -442,7 +469,7 @@ export async function GET(request: NextRequest) {
               }
               
               // Don't duplicate existing candidates
-              if (isDuplicatePlace(place, allCandidates)) {
+              if (isDuplicatePlace(place, allCandidates, latitude, longitude)) {
                 return false;
               }
               
@@ -498,7 +525,7 @@ export async function GET(request: NextRequest) {
             .filter((item): item is NonNullable<typeof item> => item !== null)
             // Deduplicate by name and distance before sorting
             .filter((item, index, array) => {
-              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place]));
+              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place], latitude, longitude));
             })
             .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
             .slice(0, 5);
@@ -588,7 +615,7 @@ export async function GET(request: NextRequest) {
               }
               
               // Don't duplicate existing candidates
-              if (isDuplicatePlace(place, allCandidates)) {
+              if (isDuplicatePlace(place, allCandidates, latitude, longitude)) {
                 return false;
               }
               
@@ -638,7 +665,7 @@ export async function GET(request: NextRequest) {
             .filter((item): item is NonNullable<typeof item> => item !== null)
             // Deduplicate by name and distance before sorting
             .filter((item, index, array) => {
-              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place]));
+              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place], latitude, longitude));
             })
             .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
             .slice(0, 5);
@@ -854,7 +881,7 @@ export async function GET(request: NextRequest) {
               }
               
               // Don't duplicate existing candidates
-              if (isDuplicatePlace(place, allCandidates)) {
+              if (isDuplicatePlace(place, allCandidates, latitude, longitude)) {
                 return false;
               }
               
@@ -904,7 +931,7 @@ export async function GET(request: NextRequest) {
             .filter((item): item is NonNullable<typeof item> => item !== null)
             // Deduplicate by name and distance before sorting
             .filter((item, index, array) => {
-              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place]));
+              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place], latitude, longitude));
             })
             .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
             .slice(0, 5);
@@ -1118,7 +1145,7 @@ export async function GET(request: NextRequest) {
             }
             
             // Don't duplicate existing candidates
-            if (isDuplicatePlace(place, topCandidates)) {
+            if (isDuplicatePlace(place, topCandidates, latitude, longitude)) {
               return false;
             }
             
@@ -1179,7 +1206,7 @@ export async function GET(request: NextRequest) {
             .filter((item): item is NonNullable<typeof item> => item !== null)
             // Deduplicate by name and distance before sorting
             .filter((item, index, array) => {
-              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place]));
+              return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place], latitude, longitude));
             })
             .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
             .slice(0, 5);
