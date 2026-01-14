@@ -350,7 +350,6 @@ export async function GET(request: NextRequest) {
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null && item.isDryToday)
-<<<<<<< HEAD
       // Deduplicate by name: if same name appears multiple times, keep only the closest one
       // This prevents duplicates like "Chelmsford" appearing at 7km and 13km
       .reduce((acc: Array<{place: Place; isDryToday: boolean; rainSummary: string; weather: any}>, item) => {
@@ -370,12 +369,6 @@ export async function GET(request: NextRequest) {
         }
         return acc;
       }, [])
-=======
-      // Deduplicate by name and distance before sorting
-      .filter((item, index, array) => {
-        return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place]));
-      })
->>>>>>> origin/fix-duplicates-and-dropdown-performance
       .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
       .slice(0, 5); // Take top 5
 
