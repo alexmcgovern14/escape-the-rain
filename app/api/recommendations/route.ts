@@ -342,6 +342,10 @@ export async function GET(request: NextRequest) {
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null && item.isDryToday)
+      // Deduplicate by name and distance before sorting
+      .filter((item, index, array) => {
+        return !array.slice(0, index).some(prev => isDuplicatePlace(item.place, [prev.place]));
+      })
       .sort((a, b) => a.place.distanceKm - b.place.distanceKm)
       .slice(0, 5); // Take top 5
 
