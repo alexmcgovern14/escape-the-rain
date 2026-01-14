@@ -33,6 +33,8 @@ export default function LocationSelector({
   const [showResults, setShowResults] = useState(false);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const searchCacheRef = useRef<Map<string, GeocodeResult[]>>(new Map());
 
   const handleGeolocation = () => {
     if (!navigator.geolocation) {
@@ -66,20 +68,66 @@ export default function LocationSelector({
       return;
     }
 
+    const queryKey = searchQuery.trim().toLowerCase();
+    
+    // Check cache first
+    if (searchCacheRef.current.has(queryKey)) {
+      const cachedResults = searchCacheRef.current.get(queryKey)!;
+      setSearchResults(cachedResults);
+      setShowResults(cachedResults.length > 0);
+      setSelectedIndex(-1);
+      return;
+    }
+
+    // Cancel previous request if it exists
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     setIsSearching(true);
     try {
-      const response = await fetch(`/api/geocode?q=${encodeURIComponent(searchQuery)}`);
+      const response = await fetch(`/api/geocode?q=${encodeURIComponent(searchQuery)}`, {
+        signal: abortController.signal,
+      });
+      
+      // Check if request was aborted
+      if (abortController.signal.aborted) {
+        return;
+      }
+
       const data = await response.json();
       const results = data.results || [];
+      
+      // Cache the results
+      searchCacheRef.current.set(queryKey, results);
+      // Limit cache size to prevent memory issues (keep last 50 searches)
+      if (searchCacheRef.current.size > 50) {
+        const firstKey = searchCacheRef.current.keys().next().value;
+        if (firstKey !== undefined) {
+          searchCacheRef.current.delete(firstKey);
+        }
+      }
+      
       setSearchResults(results);
       setShowResults(results.length > 0);
       setSelectedIndex(-1);
-    } catch (error) {
+    } catch (error: any) {
+      // Ignore abort errors
+      if (error.name === 'AbortError') {
+        return;
+      }
       clientLogger.error("Geocoding error:", error);
       setSearchResults([]);
       setShowResults(false);
     } finally {
-      setIsSearching(false);
+      // Only update loading state if this request wasn't aborted
+      if (!abortController.signal.aborted) {
+        setIsSearching(false);
+      }
     }
   }, [searchQuery]);
 
@@ -94,8 +142,23 @@ export default function LocationSelector({
       }
     }, SEARCH_CONFIG.DEBOUNCE_MS);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      // Cancel any pending request when query changes
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [searchQuery, handleSearch]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Click outside detection
   useEffect(() => {
